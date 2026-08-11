@@ -17,6 +17,7 @@ work is.
 | [investigation.md](docs/investigation.md) | Findings, architecture recommendation, risks, next steps |
 | [protocol-register-bus.md](docs/protocol-register-bus.md) | Wire format, addressing, register map, worked examples |
 | [coex-http-api.md](docs/coex-http-api.md) | The port 8001 JSON API on MX/CX/KU controllers |
+| [capture-workflow.md](docs/capture-workflow.md) | Day-one bring-up, and how to make NovaLCT document itself |
 | [prior-art.md](docs/prior-art.md) | Existing libraries and official interfaces, with licensing |
 | [sources.md](docs/sources.md) | Every document and repository this was built from |
 
@@ -33,7 +34,10 @@ src/novasun/
   transport.py   TCP and serial byte transports, stream reassembly
   discovery.py   UDP 3800 broadcast discovery
   client.py      Controller: read/write registers, display control, monitoring
-  coex.py        COEX HTTP API client (port 8001)
+  coex.py        COEX HTTP API client (port 8001), snapshot and diff
+  proxy.py       MITM proxy: log NovaLCT's conversation with a controller
+  capture.py     pcap/pcapng parser, register summaries, differential analysis
+  names.py       register naming, with an optional externally-imported map
   simulator.py   a fake controller that speaks the same protocol
   cli.py         command line front end
 ```
@@ -58,7 +62,30 @@ python -m novasun info 192.168.1.40
 python -m novasun read 192.168.1.40 0x02000001 1 --receiving-card
 ```
 
-Or from Python:
+### Learning the address map from the vendor software
+
+Put the proxy between NovaLCT and a controller, drive the same action twice with
+one setting changed, and diff — the register that moved is the one that setting
+drives. No Wireshark involved; full workflow in
+[`docs/capture-workflow.md`](docs/capture-workflow.md).
+
+```bash
+python -m novasun proxy 192.168.1.40 --log a.jsonl   # then again to b.jsonl
+python -m novasun capture diff a.jsonl b.jsonl
+```
+
+```
+2 register(s) differ:
+
+  0x02000001  ALL_BRIGHTNESS / GLOBAL_BRIGHTNESS       4c -> e6
+  0x02000101  SELF_TEST_MODE                           02 -> 04
+```
+
+Packet captures work the same way — `capture decode`, `report` and `diff` all
+read pcap and pcapng directly, so a file recorded with tcpdump or Wireshark
+needs no Wireshark to analyse.
+
+### From Python
 
 ```python
 from novasun import Controller, TestPattern, discover
@@ -84,11 +111,13 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-42 tests. The protocol suite replays 26 frames printed in NovaStar's own
+64 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The
-client suite runs end to end against the simulator.
+client and proxy suites run end to end against the simulator, and the capture
+tests synthesise pcap and pcapng files to the file-format specifications rather
+than using committed fixtures.
 
 ## Status and caveats
 

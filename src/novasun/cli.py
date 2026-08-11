@@ -8,6 +8,14 @@
     python -m novasun blackout 192.168.1.40 on
     python -m novasun read 192.168.1.40 0x02000001 1 --receiving-card
 
+Reverse-engineering tools:
+
+    python -m novasun proxy 192.168.1.40 --log session.jsonl
+    python -m novasun capture decode session.jsonl
+    python -m novasun capture diff before.pcapng after.pcapng
+    python -m novasun capture report session.jsonl -o report.md
+    python -m novasun coex snapshot 192.168.1.10 -o before.json
+
 Options come after the positional arguments (``brightness HOST 60 --port
 5200``); argparse cannot place an optional between two positionals.
 """
@@ -15,12 +23,18 @@ Options come after the positional arguments (``brightness HOST 60 --port
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
+from . import capture as capture_module
+from . import coex as coex_module
 from . import registers as reg
 from .client import Controller
 from .discovery import discover
+from .names import DEFAULT_INDEX_PATH, NameIndex, import_address_mapping
 from .protocol import Target, hexdump
+from .proxy import NovastarProxy, ProxySession, print_observer
 from .transport import TCP_PORT
 
 
@@ -127,6 +141,119 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- capture analysis and proxying -----------------------------------------
+
+
+def cmd_capture_decode(args: argparse.Namespace) -> int:
+    events = capture_module.load(args.file)
+    if not events:
+        print("no register-bus frames found", file=sys.stderr)
+        return 1
+    names = NameIndex.load()
+    for event in events:
+        print(event.describe(names))
+    print(f"\n{len(events)} frames", file=sys.stderr)
+    return 0
+
+
+def cmd_capture_report(args: argparse.Namespace) -> int:
+    events = capture_module.load(args.file)
+    text = capture_module.report(events, NameIndex.load())
+    if args.output:
+        Path(args.output).write_text(text)
+        print(f"wrote {args.output}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_capture_diff(args: argparse.Namespace) -> int:
+    before = capture_module.load(args.before)
+    after = capture_module.load(args.after)
+    differences = capture_module.diff(before, after)
+    if not differences:
+        print("no register writes differ between the two captures")
+        return 0
+    names = NameIndex.load()
+    print(f"{len(differences)} register(s) differ:\n")
+    for difference in differences:
+        print("  " + difference.describe(names))
+    return 0
+
+
+def cmd_proxy(args: argparse.Namespace) -> int:
+    log_path = Path(args.log) if args.log else None
+    session = ProxySession(log_path=log_path)
+    if not args.quiet:
+        session.observers.append(print_observer(NameIndex.load()))
+    proxy = NovastarProxy(
+        target_host=args.target,
+        target_port=args.target_port,
+        listen_host=args.listen,
+        listen_port=args.listen_port,
+        session=session,
+    )
+    host, port = proxy.address
+    print(
+        f"proxying {host}:{port} -> {args.target}:{args.target_port}\n"
+        f"point the vendor software at {host}:{port} and drive it; ctrl-c to stop",
+        file=sys.stderr,
+    )
+    if log_path:
+        print(f"logging frames to {log_path}", file=sys.stderr)
+    try:
+        proxy.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proxy.shutdown()
+    print(f"\n{len(session.events)} frames observed", file=sys.stderr)
+    return 0
+
+
+def cmd_names_import(args: argparse.Namespace) -> int:
+    index = import_address_mapping(Path(args.source), Path(args.index))
+    print(f"imported {len(index.imported)} names into {args.index}")
+    print(f"{index.size} addresses known in total")
+    return 0
+
+
+def cmd_names_show(args: argparse.Namespace) -> int:
+    index = NameIndex.load(Path(args.index))
+    print(f"{len(index.builtin)} built-in, {len(index.imported)} imported")
+    if args.address is not None:
+        print(index.lookup(args.address) or "unknown")
+    return 0
+
+
+# --- COEX HTTP --------------------------------------------------------------
+
+
+def cmd_coex_snapshot(args: argparse.Namespace) -> int:
+    client = coex_module.CoexClient(args.host, args.port, timeout=args.timeout)
+    data = coex_module.snapshot(client)
+    text = json.dumps(data, indent=2, sort_keys=True)
+    if args.output:
+        Path(args.output).write_text(text)
+        print(f"wrote {args.output}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_coex_diff(args: argparse.Namespace) -> int:
+    before = json.loads(Path(args.before).read_text())
+    after = json.loads(Path(args.after).read_text())
+    changes = coex_module.diff_snapshots(before, after)
+    if not changes:
+        print("snapshots are identical")
+        return 0
+    print(f"{len(changes)} field(s) changed:\n")
+    for path, old, new in changes:
+        print(f"  {path}\n      {old!r} -> {new!r}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="novasun", description=__doc__.splitlines()[0])
     parser.add_argument("--timeout", type=float, default=2.0)
@@ -143,7 +270,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     with_host("info", "identify the connected device(s)").set_defaults(func=cmd_info)
 
-    brightness = with_host("brightness", "set brightness, 0-100 %")
+    # No literal '%' in help strings: argparse runs them through %-formatting.
+    brightness = with_host("brightness", "set brightness, 0-100 percent")
     brightness.add_argument("percent", type=float)
     brightness.set_defaults(func=cmd_brightness)
 
@@ -182,6 +310,69 @@ def build_parser() -> argparse.ArgumentParser:
     monitor.add_argument("--port-index", type=int, default=0)
     monitor.add_argument("--card-index", type=int, default=0)
     monitor.set_defaults(func=cmd_monitor)
+
+    # capture analysis
+    capture = sub.add_parser("capture", help="analyse captured traffic")
+    capture_sub = capture.add_subparsers(dest="capture_command", required=True)
+
+    decode = capture_sub.add_parser("decode", help="print every frame in a capture")
+    decode.add_argument("file", help="pcap, pcapng, or a proxy .jsonl log")
+    decode.set_defaults(func=cmd_capture_decode)
+
+    report_cmd = capture_sub.add_parser("report", help="markdown summary by register")
+    report_cmd.add_argument("file")
+    report_cmd.add_argument("-o", "--output")
+    report_cmd.set_defaults(func=cmd_capture_report)
+
+    diff_cmd = capture_sub.add_parser(
+        "diff", help="which registers two captures wrote differently"
+    )
+    diff_cmd.add_argument("before")
+    diff_cmd.add_argument("after")
+    diff_cmd.set_defaults(func=cmd_capture_diff)
+
+    # proxy
+    proxy = sub.add_parser("proxy", help="sit between vendor software and a controller")
+    proxy.add_argument("target", help="the real controller's address")
+    proxy.add_argument("--target-port", type=int, default=TCP_PORT)
+    proxy.add_argument("--listen", default="0.0.0.0")
+    proxy.add_argument("--listen-port", type=int, default=TCP_PORT)
+    proxy.add_argument("--log", help="write a .jsonl session log")
+    proxy.add_argument("--quiet", action="store_true", help="do not print frames")
+    proxy.set_defaults(func=cmd_proxy)
+
+    # address names
+    names = sub.add_parser("names", help="manage the register name index")
+    names_sub = names.add_subparsers(dest="names_command", required=True)
+
+    names_import = names_sub.add_parser(
+        "import", help="import an external address map (kept out of this repo)"
+    )
+    names_import.add_argument("source", help="path to an AddressMapping.ts")
+    names_import.add_argument("--index", default=str(DEFAULT_INDEX_PATH))
+    names_import.set_defaults(func=cmd_names_import)
+
+    names_show = names_sub.add_parser("show", help="index size, or look one address up")
+    names_show.add_argument("address", nargs="?", type=lambda v: int(v, 0))
+    names_show.add_argument("--index", default=str(DEFAULT_INDEX_PATH))
+    names_show.set_defaults(func=cmd_names_show)
+
+    # COEX HTTP API
+    coex = sub.add_parser("coex", help="the COEX HTTP API on port 8001")
+    coex_sub = coex.add_subparsers(dest="coex_command", required=True)
+
+    coex_snapshot = coex_sub.add_parser(
+        "snapshot", help="dump every read-only endpoint to JSON"
+    )
+    coex_snapshot.add_argument("host")
+    coex_snapshot.add_argument("--port", type=int, default=coex_module.DEFAULT_PORT)
+    coex_snapshot.add_argument("-o", "--output")
+    coex_snapshot.set_defaults(func=cmd_coex_snapshot)
+
+    coex_diff = coex_sub.add_parser("diff", help="compare two snapshots")
+    coex_diff.add_argument("before")
+    coex_diff.add_argument("after")
+    coex_diff.set_defaults(func=cmd_coex_diff)
 
     return parser
 

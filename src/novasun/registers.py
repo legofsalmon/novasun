@@ -100,6 +100,22 @@ CONFIDENCE: dict[int, str] = {
 }
 
 
+BLOCKS: dict[int, int] = {
+    DEVICE_NAME_SPACE: 88,
+    RECEIVER_MONITORING: 0x100,
+    RED_GAMMA_TABLE: 512,
+    GREEN_GAMMA_TABLE: 512,
+    BLUE_GAMMA_TABLE: 512,
+    VIDEO_SOURCE_STATE: 64,
+    SCREEN_CONFIG_SPACE: 15,
+}
+"""Registers that are blocks rather than scalars, and how long they are.
+
+Used when reading captures: an access partway into a block belongs to that
+block, and should not be reported as an unknown register.
+"""
+
+
 class TestPattern(IntEnum):
     """Values for :data:`SELF_TEST_MODE` (M3 protocol, receiving-card table)."""
 

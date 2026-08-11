@@ -133,6 +133,61 @@ class CoexClient:
         self.request("PUT", "/api/v1/device/hw/mode", {"value": 1 if all_in_one else 0})
 
 
+SNAPSHOT_ENDPOINTS = {
+    "device": "/api/v1/device",
+    "screens": "/api/v1/screen",
+    "cabinets": "/api/v1/device/cabinet",
+    "inputs": "/api/v1/device/input/sources",
+    "presets": "/api/v1/preset",
+    "monitoring": "/api/v1/device/monitor/info",
+    "audio": "/api/v1/device/audio",
+    "snmp": "/api/v1/device/snmpstate",
+}
+
+
+def snapshot(client: CoexClient, endpoints: dict[str, str] | None = None) -> dict[str, Any]:
+    """GET every read-only endpoint and return the lot.
+
+    The HTTP equivalent of a packet capture: take one before a VMP action and
+    one after, diff them, and the fields that moved are what that action
+    changed. Endpoints the firmware does not implement are recorded as errors
+    rather than aborting the sweep.
+    """
+    result: dict[str, Any] = {}
+    for name, path in (endpoints or SNAPSHOT_ENDPOINTS).items():
+        try:
+            result[name] = client.request("GET", path)
+        except (CoexError, OSError, json.JSONDecodeError) as exc:
+            result[name] = {"__error__": str(exc)}
+    return result
+
+
+def diff_snapshots(before: Any, after: Any, path: str = "") -> list[tuple[str, Any, Any]]:
+    """Recursively compare two snapshots; returns ``(path, before, after)``.
+
+    Monitoring fields drift on their own (temperatures, uptimes), so expect
+    noise and read the diff for what changed *structurally*.
+    """
+    changes: list[tuple[str, Any, Any]] = []
+    if isinstance(before, dict) and isinstance(after, dict):
+        for key in sorted(set(before) | set(after)):
+            changes.extend(
+                diff_snapshots(
+                    before.get(key, "__absent__"),
+                    after.get(key, "__absent__"),
+                    f"{path}.{key}" if path else str(key),
+                )
+            )
+    elif isinstance(before, list) and isinstance(after, list):
+        if len(before) != len(after):
+            changes.append((f"{path}[]", f"{len(before)} items", f"{len(after)} items"))
+        for index, (old, new) in enumerate(zip(before, after)):
+            changes.extend(diff_snapshots(old, new, f"{path}[{index}]"))
+    elif before != after:
+        changes.append((path, before, after))
+    return changes
+
+
 def probe(host: str, port: int = DEFAULT_PORT, timeout: float = 2.0) -> bool:
     """True when a COEX HTTP API answers -- use it to pick a control path."""
     try:

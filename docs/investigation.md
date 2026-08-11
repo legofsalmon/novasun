@@ -281,3 +281,9 @@ The decode work is essentially done; the open questions all need hardware:
 Until hardware is available, the simulator in
 [`../src/novasun/simulator.py`](../src/novasun/simulator.py) answers the same
 protocol and lets the application layer be developed and tested against it.
+
+The tooling for items 2–4 is built and tested:
+[`capture-workflow.md`](capture-workflow.md) covers day-one bring-up, the
+logging proxy that sits between NovaLCT and a controller, the pcap/pcapng
+analyser, and the differential method that turns the vendor software into the
+address-map documentation.
