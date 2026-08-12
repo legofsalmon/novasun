@@ -243,7 +243,9 @@ class Processor:
 
     # --- display ------------------------------------------------------------
 
-    def set_display_mode(self, mode: DisplayMode | str) -> None:
+    def set_display_mode(
+        self, mode: DisplayMode | str, ports: list[int] | None = None
+    ) -> None:
         """Normal, blackout or freeze, by whatever mechanism the model uses.
 
         The value written is model-specific: a VX4S wants 2 for blackout where
@@ -253,6 +255,16 @@ class Processor:
         name = mode.name.lower() if isinstance(mode, DisplayMode) else str(mode).lower()
         if name not in ("normal", "blackout", "freeze"):
             raise ValueError(f"unknown display mode {mode!r}")
+
+        if ports:
+            # A processor-level display register blanks the whole output, so a
+            # partial screen has to go via the receiving cards on its own ports.
+            controller = self._require_controller("port-scoped display control")
+            for port in self._checked_ports(ports):
+                target = Target.all_on_port(port)
+                controller.blackout(name == "blackout", target)
+                controller.freeze(name == "freeze", target)
+            return
 
         if self.coex is not None:
             self.coex.set_display_mode(self.profile.display.value_for(name))
@@ -270,13 +282,29 @@ class Processor:
         controller.blackout(name == "blackout")
         controller.freeze(name == "freeze")
 
-    def blackout(self, enabled: bool = True) -> None:
-        self.set_display_mode(DisplayMode.BLACKOUT if enabled else DisplayMode.NORMAL)
+    def blackout(self, enabled: bool = True, ports: list[int] | None = None) -> None:
+        self.set_display_mode(
+            DisplayMode.BLACKOUT if enabled else DisplayMode.NORMAL, ports
+        )
 
-    def freeze(self, enabled: bool = True) -> None:
-        self.set_display_mode(DisplayMode.FREEZE if enabled else DisplayMode.NORMAL)
+    def freeze(self, enabled: bool = True, ports: list[int] | None = None) -> None:
+        self.set_display_mode(
+            DisplayMode.FREEZE if enabled else DisplayMode.NORMAL, ports
+        )
 
-    def set_test_pattern(self, pattern: "reg.TestPattern | str") -> None:
+    def _checked_ports(self, ports: list[int]) -> list[int]:
+        """Reject ports the model does not have, rather than writing into space."""
+        bad = [port for port in ports if not 0 <= port < self.profile.port_count]
+        if bad:
+            raise ValueError(
+                f"{self.profile.name} has {self.profile.port_count} output ports; "
+                f"no port {', '.join(str(p) for p in bad)}"
+            )
+        return sorted(set(ports))
+
+    def set_test_pattern(
+        self, pattern: "reg.TestPattern | str", ports: list[int] | None = None
+    ) -> None:
         """Show a built-in test pattern on the receiving cards.
 
         Register-bus only. The COEX HTTP API has a test-pattern endpoint, but
@@ -301,7 +329,11 @@ class Processor:
                 raise ValueError(
                     f"unknown test pattern {pattern!r}; available: {available}"
                 ) from exc
-        controller.set_test_pattern(resolved)
+        if ports:
+            for port in self._checked_ports(ports):
+                controller.set_test_pattern(resolved, Target.all_on_port(port))
+        else:
+            controller.set_test_pattern(resolved)
 
     def set_panel_lock(self, locked: bool) -> None:
         """Lock the front-panel LCD and buttons, on models that support it."""
@@ -314,7 +346,18 @@ class Processor:
 
     # --- brightness and monitoring -----------------------------------------
 
-    def set_brightness(self, percent: float) -> None:
+    def set_brightness(self, percent: float, ports: list[int] | None = None) -> None:
+        """Set brightness, optionally only on some output ports.
+
+        ``ports`` is how a screen that occupies part of a processor addresses
+        just its own cabinets. Without it, every receiving card is written in a
+        single broadcast frame.
+        """
+        if ports:
+            controller = self._require_controller("port-scoped brightness")
+            for port in self._checked_ports(ports):
+                controller.set_brightness(percent, Target.all_on_port(port))
+            return
         if self.coex is not None:
             screens = self.coex.screens()
             identifiers = [

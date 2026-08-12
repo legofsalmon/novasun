@@ -125,6 +125,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         port=args.port,
         refresh_interval=args.interval,
         discover=args.discover,
+        config_path=Path(args.config) if args.config else None,
     )
     return 0
 
@@ -508,6 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--port", type=int, default=8770)
     serve_parser.add_argument("--interval", type=float, default=10.0, help="refresh seconds")
     serve_parser.add_argument("--discover", action="store_true", help="broadcast at start")
+    serve_parser.add_argument("--config", help="config file (default ~/.novasun/config.json)")
     serve_parser.set_defaults(func=cmd_serve)
 
     survey_parser = sub.add_parser(

@@ -32,7 +32,12 @@ novasun serve --discover          # or let it find them
 ```
 
 A local service holding connections to several processors, with a browser UI
-over it. Capability-aware: a control appears only if the connected model
+over it. Operators work in **screens** — a named wall made of parts of one or
+more processors — because nobody thinks "192.168.1.40 port 3". A screen action
+addresses only its own output ports, so blacking out the main wall does not
+touch the side fill sharing the same processor. Screens and devices persist to
+`~/.novasun/config.json`, since which ports feed which wall is venue knowledge
+no probe can recover. Capability-aware: a control appears only if the connected model
 supports it, inputs whose select code is unestablished are shown greyed with
 the reason, and blackout / freeze / test-pattern are confirmed before they are
 sent. Unreachable is a state with a retry, not an error dialog — including
@@ -43,12 +48,16 @@ different front end (Electron, Tauri, native) can import the state layer
 directly and skip the web server:
 
 ```python
-from novasun.app import Application
+from novasun.app import Application, ScreenMember
 
-with Application() as app:
-    app.add("192.168.1.40")
-    app.execute("192.168.1.40", "brightness", percent=60)
-    print(app.snapshot())
+app = Application.from_config()               # devices and screens restored
+app.add("192.168.1.40")
+app.add_screen("Main Wall", [
+    ScreenMember("192.168.1.40", ports=[0, 1]),
+    ScreenMember("192.168.1.41", ports=[0]),  # a wall can span processors
+])
+app.execute_screen("main-wall", "brightness", percent=60)
+print(app.snapshot()["screens"])
 ```
 
 Nothing that writes flash, resets to factory defaults or touches program space
@@ -204,7 +213,7 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-210 tests. The protocol suite replays 26 frames printed in NovaStar's own
+251 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The

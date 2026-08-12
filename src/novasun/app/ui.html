@@ -43,6 +43,7 @@
   .device .addr { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--dim); }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
   .online .dot { background: var(--ok); }
+  .partial .dot { background: var(--warn); }
   .unreachable .dot { background: var(--bad); }
   .in-use .dot { background: var(--warn); }
   .unknown .dot { background: var(--dim); }
@@ -80,15 +81,22 @@
 
 <main>
   <section class="card">
-    <h2>Devices</h2>
+    <h2>Screens</h2>
+    <div id="screens" class="device-list"></div>
+    <div class="row" style="margin-top:10px">
+      <input id="screenname" placeholder="New screen" size="12">
+      <button id="addscreen">Add</button>
+    </div>
+    <h2 style="margin-top:22px">Devices</h2>
     <div id="devices" class="device-list"></div>
   </section>
   <section class="card" id="detail"><p class="empty">No device selected.</p></section>
 </main>
 
 <script>
-let state = { devices: [], history: [], destructive_actions: [] };
-let selected = null;
+let state = { devices: [], screens: [], history: [], destructive_actions: [] };
+let selected = null;          // device address
+let selectedScreen = null;
 let busy = false;
 
 const $ = (id) => document.getElementById(id);
@@ -123,6 +131,104 @@ async function act(address, action, args, label) {
 }
 
 function device(address) { return state.devices.find((d) => d.address === address); }
+function screenOf(id) { return (state.screens || []).find((s) => s.identifier === id); }
+
+async function actScreen(id, action, args, label) {
+  if (state.destructive_actions.includes(action)) {
+    const scr = screenOf(id);
+    const count = scr ? scr.device_count : '?';
+    if (!confirm(`${label || action} on "${scr ? scr.name : id}"?\n\n` +
+                 `This changes what ${count} processor(s) are showing.`)) return;
+  }
+  busy = true; render();
+  const { payload } = await api(`/api/screens/${encodeURIComponent(id)}/action`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...args }),
+  });
+  busy = false;
+  const failed = (payload.results || []).filter((r) => !r.ok);
+  if (failed.length) alert(failed.map((r) => `${r.address}: ${r.error}`).join('\n'));
+  render();
+}
+
+function renderScreenList() {
+  const list = $('screens');
+  list.innerHTML = '';
+  const screens = state.screens || [];
+  if (!screens.length) {
+    list.innerHTML = '<p class="empty">No screens defined.</p>';
+    return;
+  }
+  for (const scr of screens) {
+    const button = document.createElement('button');
+    button.className = `device ${scr.reachability}` +
+      (scr.identifier === selectedScreen ? ' selected' : '');
+    const detail = scr.cabinets_total
+      ? `${scr.cabinets_online}/${scr.cabinets_total} cabinets`
+      : `${scr.online_count}/${scr.device_count} device(s)`;
+    button.innerHTML =
+      `<span class="dot"></span><strong>${scr.name}</strong>` +
+      `<div class="addr">${detail}${scr.hottest_c ? ' &middot; ' + scr.hottest_c + '&deg;C' : ''}</div>`;
+    button.onclick = () => { selectedScreen = scr.identifier; selected = null; render(); };
+    list.appendChild(button);
+  }
+}
+
+function renderScreenDetail(scr) {
+  const panel = $('detail');
+  const online = scr.reachability !== 'unreachable' && !busy;
+  let html = `<h2>${scr.name} <span class="empty">screen</span></h2>`;
+
+  if (!scr.healthy) {
+    const kind = scr.reachability === 'online' ? 'warn' : 'bad';
+    html += `<div class="banner ${kind}"><strong>${scr.reachability}</strong>` +
+      (scr.problems.length ? ' &mdash; ' + scr.problems.join('; ') : '') + '</div>';
+  }
+
+  html += '<dl class="facts">' +
+    fact('Processors', `${scr.online_count}/${scr.device_count} online`) +
+    fact('Cabinets', scr.cabinets_total ? `${scr.cabinets_online}/${scr.cabinets_total} online` : null) +
+    fact('Hottest', scr.hottest_c ? `${scr.hottest_c} &deg;C` : null) +
+    '</dl>';
+
+  html += '<h3>Made of</h3><div class="log">' +
+    scr.members.map((m) => {
+      const scope = m.ports ? `ports ${m.ports.join(', ')}`
+        : m.screen_ids ? `screens ${m.screen_ids.join(', ')}` : 'whole device';
+      return `<div>${m.address} &mdash; ${scope}</div>`;
+    }).join('') + '</div>';
+
+  html += '<h3>Whole screen</h3><div class="row">' +
+    `<button data-sact="normal" ${online ? '' : 'disabled'}>Normal</button>` +
+    `<button class="danger" data-sact="blackout" ${online ? '' : 'disabled'}>Blackout</button>` +
+    `<button class="danger" data-sact="freeze" ${online ? '' : 'disabled'}>Freeze</button>` +
+    '</div>';
+
+  html += '<h3>Brightness</h3><div class="row">' +
+    `<input type="range" id="sbright" min="0" max="100" value="60" ${online ? '' : 'disabled'}>` +
+    '<span id="sbrightval">60%</span>' +
+    `<button class="primary" id="sapply" ${online ? '' : 'disabled'}>Apply to screen</button></div>`;
+
+  html += '<h3>Screen</h3><div class="row">' +
+    `<button id="delscreen">Delete screen</button></div>`;
+
+  panel.innerHTML = html;
+
+  panel.querySelectorAll('[data-sact]').forEach((b) => {
+    b.onclick = () => actScreen(scr.identifier, 'display_mode', { mode: b.dataset.sact }, b.dataset.sact);
+  });
+  const slider = $('sbright');
+  if (slider) {
+    slider.oninput = () => { $('sbrightval').textContent = slider.value + '%'; };
+    $('sapply').onclick = () => actScreen(scr.identifier, 'brightness', { percent: Number(slider.value) });
+  }
+  $('delscreen').onclick = async () => {
+    if (!confirm(`Delete the screen "${scr.name}"? The processors are not changed.`)) return;
+    await api(`/api/screens/${encodeURIComponent(scr.identifier)}`, { method: 'DELETE' });
+    selectedScreen = null;
+    await load();
+  };
+}
 
 function renderDeviceList() {
   const list = $('devices');
@@ -137,7 +243,7 @@ function renderDeviceList() {
     button.innerHTML =
       `<span class="dot"></span><strong>${entry.model || 'unknown'}</strong>` +
       `<div class="addr">${entry.address} &middot; ${entry.reachability}</div>`;
-    button.onclick = () => { selected = entry.address; render(); };
+    button.onclick = () => { selected = entry.address; selectedScreen = null; render(); };
     list.appendChild(button);
   }
 }
@@ -149,8 +255,13 @@ function fact(label, value) {
 
 function renderDetail() {
   const panel = $('detail');
+  if (selectedScreen) {
+    const scr = screenOf(selectedScreen);
+    if (scr) return renderScreenDetail(scr);
+    selectedScreen = null;
+  }
   const entry = device(selected);
-  if (!entry) { panel.innerHTML = '<p class="empty">No device selected.</p>'; return; }
+  if (!entry) { panel.innerHTML = '<p class="empty">Select a screen or a device.</p>'; return; }
 
   const caps = entry.capabilities || {};
   const status = entry.status || {};
@@ -276,6 +387,7 @@ function renderDetail() {
 }
 
 function render() {
+  renderScreenList();
   renderDeviceList();
   renderDetail();
   $('tick').textContent = new Date().toLocaleTimeString();
@@ -290,6 +402,17 @@ $('add').onclick = async () => {
   });
   $('address').value = '';
   selected = selected || address;
+  render();
+};
+$('addscreen').onclick = async () => {
+  const name = $('screenname').value.trim();
+  if (!name) return;
+  const { payload } = await api('/api/screens', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, members: [] }),
+  });
+  $('screenname').value = '';
+  if (payload.screen) { selectedScreen = payload.screen.identifier; selected = null; }
   render();
 };
 $('discover').onclick = async () => { await api('/api/discover', { method: 'POST' }); render(); };

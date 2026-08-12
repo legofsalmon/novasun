@@ -246,6 +246,23 @@ class Target:
         )
 
     @classmethod
+    def all_on_port(cls, port: int, destination: int = BROADCAST_DEVICE) -> "Target":
+        """Every receiving card on one output port.
+
+        The unit a screen is usually built from: a wall is "ports 0 and 1 of
+        this processor" far more often than an explicit list of cabinets.
+
+        Not named ``port``: this is a dataclass with a ``port`` field, and a
+        classmethod of the same name silently becomes that field's default.
+        """
+        return cls(
+            destination=destination,
+            device_type=DeviceType.RECEIVING_CARD,
+            port=port,
+            rcv_index=BROADCAST_RCV,
+        )
+
+    @classmethod
     def receiving_card(cls, port: int, index: int, destination: int = 0) -> "Target":
         return cls(
             destination=destination,

@@ -33,9 +33,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
+from pathlib import Path
+
 from ..devices import DeviceProfile, Family, identify, unknown_profile
 from ..processor import CapabilityUnknown, NotSupported, Processor
 from ..registers import DisplayMode, TestPattern
+from . import config as config_module
+from .screens import Screen, ScreenMember, aggregate
 
 MAX_BACKOFF = 60.0
 FIRST_BACKOFF = 2.0
@@ -121,8 +125,11 @@ class DeviceState:
 class Device:
     """One processor, with its connection and cached state."""
 
-    def __init__(self, address: str, timeout: float = 2.0, **ports: int) -> None:
+    def __init__(
+        self, address: str, timeout: float = 2.0, label: str = "", **ports: int
+    ) -> None:
         self.address = address
+        self.label = label
         self.timeout = timeout
         self._ports = ports
         self._processor: Processor | None = None
@@ -204,6 +211,9 @@ class Device:
         if processor.identification is not None:
             state.serial = processor.identification.serial or state.serial
             state.name = processor.identification.device_name or state.name
+        # An operator's own label beats whatever the device calls itself.
+        if self.label:
+            state.name = self.label
 
         state.inputs = [
             {
@@ -286,18 +296,23 @@ class Device:
         return record
 
     def _dispatch(self, processor: Processor, action: str, arguments: dict[str, Any]) -> None:
+        # `ports` narrows an action to part of a processor, which is how a
+        # screen that occupies only some outputs addresses just its own.
+        raw_ports = arguments.get("ports")
+        ports = [int(p) for p in raw_ports] if raw_ports else None
+
         if action == "brightness":
-            processor.set_brightness(float(arguments["percent"]))
+            processor.set_brightness(float(arguments["percent"]), ports)
         elif action == "select_input":
             processor.select_input(str(arguments["label"]))
         elif action == "display_mode":
-            processor.set_display_mode(str(arguments["mode"]))
+            processor.set_display_mode(str(arguments["mode"]), ports)
         elif action == "blackout":
-            processor.blackout(bool(arguments.get("enabled", True)))
+            processor.blackout(bool(arguments.get("enabled", True)), ports)
         elif action == "freeze":
-            processor.freeze(bool(arguments.get("enabled", True)))
+            processor.freeze(bool(arguments.get("enabled", True)), ports)
         elif action == "test_pattern":
-            processor.set_test_pattern(str(arguments["pattern"]))
+            processor.set_test_pattern(str(arguments["pattern"]), ports)
         elif action == "panel_lock":
             processor.set_panel_lock(bool(arguments["locked"]))
         elif action == "scan_cards":
@@ -313,15 +328,162 @@ class Device:
 class Application:
     """The application's model: several devices, refreshed in the background."""
 
-    def __init__(self, refresh_interval: float = 10.0, timeout: float = 2.0) -> None:
+    def __init__(
+        self,
+        refresh_interval: float = 10.0,
+        timeout: float = 2.0,
+        config_path: Path | None = None,
+        autosave: bool = True,
+    ) -> None:
         self.refresh_interval = refresh_interval
         self.timeout = timeout
         self.devices: dict[str, Device] = {}
+        self.screens: dict[str, Screen] = {}
         self.history: list[ActionRecord] = []
+        self.config_path = config_path
+        self.autosave = autosave
+        self.config_error: str | None = None
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self.listeners: list[Callable[[], None]] = []
+
+    # --- persistence --------------------------------------------------------
+
+    @classmethod
+    def from_config(
+        cls, path: Path | None = None, timeout: float = 2.0, connect: bool = True
+    ) -> "Application":
+        """Build an application from a saved config, restoring devices and screens."""
+        config = config_module.load(path)
+        app = cls(
+            refresh_interval=config.refresh_interval,
+            timeout=timeout,
+            config_path=config.path,
+        )
+        app.config_error = config.load_error
+        for screen in config.screens:
+            app.screens[screen.identifier] = screen
+        for entry in config.devices:
+            device = Device(
+                entry.address, timeout=timeout, label=entry.label, **entry.ports
+            )
+            app.devices[entry.address] = device
+            if connect:
+                device.refresh(force=True)
+        return app
+
+    def to_config(self) -> "config_module.Config":
+        with self._lock:
+            return config_module.Config(
+                refresh_interval=self.refresh_interval,
+                devices=[
+                    config_module.DeviceEntry(
+                        address=device.address, label=device.label, ports=dict(device._ports)
+                    )
+                    for device in self.devices.values()
+                ],
+                screens=list(self.screens.values()),
+                path=self.config_path,
+            )
+
+    def save(self, path: Path | None = None) -> Path:
+        """Persist devices, screens and the refresh interval."""
+        destination = self.to_config().save(path or self.config_path)
+        self.config_path = destination
+        return destination
+
+    def _autosave(self) -> None:
+        if not self.autosave:
+            return
+        try:
+            self.save()
+        except OSError as exc:
+            # A read-only home directory must not stop the show; surface it.
+            self.config_error = f"could not save config: {exc}"
+
+    # --- screens ------------------------------------------------------------
+
+    def add_screen(self, name: str, members: list[ScreenMember] | None = None) -> Screen:
+        screen = Screen.create(name, members)
+        with self._lock:
+            # Two walls both called "Stage Left" should not silently merge.
+            base, suffix = screen.identifier, 2
+            while screen.identifier in self.screens:
+                screen.identifier = f"{base}-{suffix}"
+                suffix += 1
+            self.screens[screen.identifier] = screen
+        self._autosave()
+        self._notify()
+        return screen
+
+    def update_screen(self, identifier: str, **changes: Any) -> Screen | None:
+        with self._lock:
+            screen = self.screens.get(identifier)
+            if screen is None:
+                return None
+            if "name" in changes:
+                screen.name = str(changes["name"])
+            if "note" in changes:
+                screen.note = str(changes["note"])
+            if "members" in changes:
+                screen.members = [
+                    member
+                    if isinstance(member, ScreenMember)
+                    else ScreenMember.from_dict(member)
+                    for member in changes["members"]
+                ]
+        self._autosave()
+        self._notify()
+        return screen
+
+    def remove_screen(self, identifier: str) -> bool:
+        with self._lock:
+            removed = self.screens.pop(identifier, None) is not None
+        if removed:
+            self._autosave()
+            self._notify()
+        return removed
+
+    def execute_screen(self, identifier: str, action: str, **arguments: Any) -> list[ActionRecord]:
+        """Run an action across every member of a screen.
+
+        Each member is addressed with only its own ports, so a screen occupying
+        half a processor does not black out the other half. Members are driven
+        independently: one unreachable device does not stop the rest, which is
+        the behaviour you want when the alternative is half a wall staying lit.
+        """
+        screen = self.screens.get(identifier)
+        if screen is None:
+            record = ActionRecord(
+                timestamp=time.time(),
+                address=identifier,
+                action=action,
+                ok=False,
+                error="no such screen",
+            )
+            with self._lock:
+                self.history.append(record)
+            return [record]
+
+        records: list[ActionRecord] = []
+        for member in screen.members:
+            member_arguments = dict(arguments)
+            if member.ports:
+                member_arguments["ports"] = member.ports
+            records.append(
+                self.execute(member.address, action, **member_arguments)
+            )
+        return records
+
+    def screen_states(self) -> list[dict[str, Any]]:
+        device_states = {
+            address: device.state.to_dict() for address, device in self.devices.items()
+        }
+        return [
+            aggregate(screen, device_states).to_dict()
+            for screen in sorted(self.screens.values(), key=lambda s: s.name.lower())
+        ]
 
     # --- membership ---------------------------------------------------------
 
@@ -342,6 +504,7 @@ class Application:
                 device = Device(address, timeout=self.timeout, **ports)
                 self.devices[address] = device
         device.refresh(force=True)
+        self._autosave()
         self._notify()
         return device
 
@@ -351,6 +514,7 @@ class Application:
         if device is None:
             return False
         device.close()
+        self._autosave()
         self._notify()
         return True
 
@@ -431,8 +595,11 @@ class Application:
             "timestamp": time.time(),
             "refresh_interval": self.refresh_interval,
             "devices": sorted(devices, key=lambda entry: entry["address"]),
+            "screens": self.screen_states(),
             "history": list(reversed(history)),
             "destructive_actions": sorted(DESTRUCTIVE),
+            "config_path": str(self.config_path) if self.config_path else None,
+            "config_error": self.config_error,
         }
 
     def __enter__(self) -> "Application":
@@ -445,6 +612,8 @@ class Application:
 
 __all__ = [
     "Application",
+    "Screen",
+    "ScreenMember",
     "Device",
     "DeviceState",
     "ActionRecord",

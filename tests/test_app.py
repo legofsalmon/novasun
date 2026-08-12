@@ -341,3 +341,83 @@ class TestReceivingCards:
         record = app.execute(device.address, "scan_cards")
         assert not record.ok
         assert "cabinets" in (record.error or "")
+
+
+class TestScreenHttp:
+    @pytest.fixture()
+    def service(self, tmp_path, vx4s):
+        from novasun.app.state import Application
+
+        app = Application(refresh_interval=60.0, timeout=1.0,
+                          config_path=tmp_path / "config.json")
+        host, port = vx4s.address
+        app.add(host, control_port=port, http_port=closed_port())
+        server = NovasunServer(app, "127.0.0.1", 0)
+        server.serve_in_thread()
+        yield server, app, vx4s
+        server.shutdown()
+        server.server_close()
+        app.stop()
+
+    def call(self, server, path, method="GET", body=None):
+        host, port = server.address
+        data = json.dumps(body).encode() if body is not None else None
+        request = urllib.request.Request(
+            f"http://{host}:{port}{path}", data=data, method=method,
+            headers={"Content-Type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.status, json.loads(response.read() or b"{}")
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read() or b"{}")
+
+    def test_create_drive_and_delete_a_screen(self, service) -> None:
+        server, app, vx4s = service
+        address = next(iter(app.devices))
+
+        status, payload = self.call(
+            server, "/api/screens", "POST",
+            {"name": "Main Wall", "members": [{"address": address, "ports": [0, 1]}]},
+        )
+        assert status == 200
+        identifier = payload["screen"]["identifier"]
+        assert identifier == "main-wall"
+
+        status, payload = self.call(
+            server, f"/api/screens/{identifier}/action", "POST",
+            {"action": "brightness", "percent": 35},
+        )
+        assert status == 200 and all(r["ok"] for r in payload["results"])
+        assert vx4s.card(0, 0).read(GLOBAL_BRIGHTNESS, 1) == bytes([brightness_byte(35)])
+        assert vx4s.card(2, 0).read(GLOBAL_BRIGHTNESS, 1) == b"\xff"  # not in the screen
+
+        status, payload = self.call(server, f"/api/screens/{identifier}", "DELETE")
+        assert status == 200 and payload["screens"] == []
+
+    def test_renaming_a_screen(self, service) -> None:
+        server, _app, _vx4s = service
+        _status, payload = self.call(server, "/api/screens", "POST", {"name": "Wall"})
+        identifier = payload["screen"]["identifier"]
+        status, payload = self.call(
+            server, f"/api/screens/{identifier}", "POST", {"name": "Upstage Wall"}
+        )
+        assert status == 200 and payload["screen"]["name"] == "Upstage Wall"
+
+    def test_partial_screen_failure_reports_conflict(self, service) -> None:
+        server, _app, _vx4s = service
+        self.call(
+            server, "/api/screens", "POST",
+            {"name": "Broken", "members": [{"address": "10.99.99.99"}]},
+        )
+        status, payload = self.call(
+            server, "/api/screens/broken/action", "POST",
+            {"action": "brightness", "percent": 10},
+        )
+        assert status == 409
+        assert not payload["results"][0]["ok"]
+
+    def test_unknown_screen_is_404(self, service) -> None:
+        server, _app, _vx4s = service
+        assert self.call(server, "/api/screens/nope", "DELETE")[0] == 404
+        assert self.call(server, "/api/screens/nope", "POST", {"name": "x"})[0] == 404

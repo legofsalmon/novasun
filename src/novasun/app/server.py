@@ -16,6 +16,10 @@ Endpoints:
 ``/api/discover``            POST    broadcast for devices and add what answers
 ``/api/refresh``             POST    refresh now rather than waiting for the tick
 ``/api/action``              POST    ``{"address", "action", ...arguments}``
+``/api/screens``             POST    ``{"name", "members": [...]}`` define a screen
+``/api/screens/<id>``        POST    update a screen's name, note or members
+``/api/screens/<id>``        DELETE  forget a screen
+``/api/screens/<id>/action`` POST    run an action across the whole screen
 ===========================  ======  ==============================================
 
 **Binds to localhost by default.** This service holds control sessions to live
@@ -31,6 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from .screens import ScreenMember
 from .state import Application
 
 DEFAULT_PORT = 8770
@@ -107,6 +112,36 @@ class _Handler(BaseHTTPRequestHandler):
             self.app.refresh_all()
             return self._send(self.app.snapshot())
 
+        if path == "/api/screens":
+            name = str(body.get("name", "")).strip()
+            if not name:
+                return self._send({"error": "a name is required"}, 400)
+            members = [ScreenMember.from_dict(m) for m in body.get("members", [])]
+            screen = self.app.add_screen(name, members)
+            return self._send({"screen": screen.to_dict(), "state": self.app.snapshot()})
+
+        if path.startswith("/api/screens/") and path.endswith("/action"):
+            identifier = path[len("/api/screens/") : -len("/action")]
+            action = str(body.pop("action", ""))
+            if not action:
+                return self._send({"error": "an action is required"}, 400)
+            records = self.app.execute_screen(identifier, action, **body)
+            ok = all(record.ok for record in records)
+            return self._send(
+                {
+                    "results": [record.to_dict() for record in records],
+                    "state": self.app.snapshot(),
+                },
+                200 if ok else 409,
+            )
+
+        if path.startswith("/api/screens/"):
+            identifier = path[len("/api/screens/") :]
+            screen = self.app.update_screen(identifier, **body)
+            if screen is None:
+                return self._send({"error": "no such screen"}, 404)
+            return self._send({"screen": screen.to_dict(), "state": self.app.snapshot()})
+
         if path == "/api/action":
             address = str(body.pop("address", ""))
             action = str(body.pop("action", ""))
@@ -122,6 +157,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:  # noqa: N802
         path = self.path.split("?")[0].rstrip("/")
+        if path.startswith("/api/screens/"):
+            if self.app.remove_screen(path[len("/api/screens/") :]):
+                return self._send(self.app.snapshot())
+            return self._send({"error": "no such screen"}, 404)
+
         prefix = "/api/devices/"
         if path.startswith(prefix):
             address = path[len(prefix) :]
@@ -168,9 +208,13 @@ def serve(
     port: int = DEFAULT_PORT,
     refresh_interval: float = 10.0,
     discover: bool = False,
+    config_path: Path | None = None,
 ) -> None:
-    """Run the application until interrupted."""
-    application = Application(refresh_interval=refresh_interval)
+    """Run the application until interrupted, restoring the saved config."""
+    application = Application.from_config(config_path)
+    application.refresh_interval = refresh_interval
+    if application.config_error:
+        print(f"  config: {application.config_error}")
     for address in hosts or []:
         application.add(address)
     if discover:
@@ -185,7 +229,12 @@ def serve(
             "  WARNING: bound to a non-local interface with no authentication.\n"
             "  Anyone who can reach this port can black out a screen.",
         )
-    print(f"  {len(application.devices)} device(s), refreshing every {refresh_interval:g}s")
+    print(
+        f"  {len(application.devices)} device(s), {len(application.screens)} screen(s), "
+        f"refreshing every {refresh_interval:g}s"
+    )
+    if application.config_path:
+        print(f"  config {application.config_path}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

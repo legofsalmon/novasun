@@ -97,9 +97,21 @@ that addressing mistakes fail here rather than on site. Do not flatten it.
 
 ## The application layer
 
-`app/state.py` holds the model, `app/server.py` only exposes it. Keep that
-split: a different front end should be able to import the state layer without
-starting a web server.
+`app/state.py` holds the model, `app/screens.py` the operator-facing grouping,
+`app/config.py` the persistence, and `app/server.py` only exposes them. Keep
+that split: a different front end should be able to import the state layer
+without starting a web server.
+
+**Screens are venue knowledge, not protocol.** Which output ports feed which
+wall cannot be discovered, so it is entered by a human and persisted. A screen
+action addresses only its members' own ports — a partial screen blacks out via
+the receiving cards rather than the processor register, which would blank the
+whole output including a screen sharing that processor.
+
+**Config is written atomically and a corrupt file is moved aside, never
+overwritten.** Losing a venue layout to a stray character is worse than starting
+empty. A config version newer than the build refuses to load rather than being
+rewritten.
 
 Rules it enforces, worth preserving:
 
