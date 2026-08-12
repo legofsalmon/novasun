@@ -19,6 +19,7 @@ work is.
 | [coex-http-api.md](docs/coex-http-api.md) | The port 8001 JSON API on MX/CX/KU controllers |
 | [target-hardware.md](docs/target-hardware.md) | The MX / VX4S / UHD Jr targets, identification, phasing |
 | [capture-workflow.md](docs/capture-workflow.md) | Day-one bring-up, and how to make NovaLCT document itself |
+| [read-only-monitoring.md](docs/read-only-monitoring.md) | For observers: what is safe to poll, what SNMP gives, what is still unknown |
 | [prior-art.md](docs/prior-art.md) | Existing libraries and official interfaces, with licensing |
 | [sources.md](docs/sources.md) | Every document and repository this was built from |
 
@@ -43,6 +44,9 @@ src/novasun/
   names.py       register naming, with an optional externally-imported map
   simulator.py   a fake controller: real chain topology, real error behaviour
   coexsim.py     a fake COEX controller serving the HTTP API
+  passive.py     zero-transmission listener for discovery traffic
+  monitor.py     read-only polling: a client that cannot write, rate limited
+  snmp.py        COEX SNMP OID map (no client -- use your own)
   cli.py         command line front end
 ```
 
@@ -153,7 +157,7 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-145 tests. The protocol suite replays 26 frames printed in NovaStar's own
+171 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The

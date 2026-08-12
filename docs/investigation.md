@@ -265,9 +265,12 @@ hardware, and they cannot break anything.
 
 The decode work is essentially done; the open questions all need hardware:
 
-1. Confirm discovery against a real controller and capture the full `rpProMI:`
-   reply, which appears to carry model and name information this implementation
-   currently ignores.
+1. Confirm discovery against a real controller and capture a full `rpProMI:`
+   reply. What follows the prefix is **unknown** — no document describes it and
+   published clients discard it. (An earlier draft of this section said it
+   "appears to carry model and name information"; that was inference, not
+   evidence, and is withdrawn. See
+   [`read-only-monitoring.md`](read-only-monitoring.md#2-decoding-the-rppromi-reply).)
 2. Verify the address map per model, starting with the read-only registers —
    model ID, serial, name, monitoring block — then brightness read-back.
 3. Establish input-source numbering for each processor you care about, since it

@@ -114,6 +114,50 @@ def cmd_outputs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_listen(args: argparse.Namespace) -> int:
+    """Observe discovery traffic without transmitting anything."""
+    from .passive import PassiveListener, build_inventory
+
+    log_path = Path(args.log) if args.log else None
+    listener = PassiveListener(log_path=log_path)
+    host, port = listener.address
+    print(
+        f"listening on {host}:{port}, transmitting nothing "
+        f"({'until ctrl-c' if args.duration is None else f'for {args.duration:g}s'})",
+        file=sys.stderr,
+    )
+    if not args.quiet:
+        listener.observers.append(lambda o: print(o.describe(), flush=True))
+    try:
+        listener.listen(args.duration)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        listener.stop()
+    print()
+    print(build_inventory(listener.observations).summary())
+    return 0
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Poll a COEX controller read-only and print status."""
+    import time as _time
+
+    from .monitor import CoexMonitor
+
+    with CoexMonitor(args.host, args.port, timeout=args.timeout) as monitor:
+        while True:
+            snapshot = monitor.poll()
+            print(snapshot.summary(), flush=True)
+            if args.once:
+                return 0
+            print("-" * 40)
+            try:
+                _time.sleep(args.interval)
+            except KeyboardInterrupt:
+                return 0
+
+
 def cmd_models(args: argparse.Namespace) -> int:
     rows = sorted(devices.MODELS.values(), key=lambda p: (p.family.value, p.name))
     rows += sorted(set(devices.COEX_MODELS.values()), key=lambda p: p.name)
@@ -425,6 +469,21 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--cards-per-port", type=int, default=2)
     simulate.add_argument("--latency", type=float, default=0.0)
     simulate.set_defaults(func=cmd_simulate)
+
+    listen_parser = sub.add_parser(
+        "listen", help="observe discovery traffic, transmitting nothing"
+    )
+    listen_parser.add_argument("--duration", type=float, help="seconds; default forever")
+    listen_parser.add_argument("--log", help="append raw datagrams to a file")
+    listen_parser.add_argument("--quiet", action="store_true")
+    listen_parser.set_defaults(func=cmd_listen)
+
+    watch = sub.add_parser("watch", help="read-only status polling of a COEX controller")
+    watch.add_argument("host")
+    watch.add_argument("--port", type=int, default=coex_module.DEFAULT_PORT)
+    watch.add_argument("--interval", type=float, default=15.0)
+    watch.add_argument("--once", action="store_true")
+    watch.set_defaults(func=cmd_watch)
 
     inputs_parser = sub.add_parser("inputs", help="list a device's inputs")
     inputs_parser.add_argument("host")
