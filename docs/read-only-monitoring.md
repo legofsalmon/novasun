@@ -275,6 +275,96 @@ connection.
 
 ---
 
+---
+
+## The survey: one call, both families
+
+[`../src/novasun/survey.py`](../src/novasun/survey.py) is the read-only view of a
+whole network in one pass — discovery, identification and status, in a stable
+serialised shape.
+
+```bash
+novasun survey --json                 # broadcast probe, then read-only status
+novasun survey 10.0.0.20 --no-probe   # transmit no broadcast; named hosts only
+```
+
+```python
+from novasun.survey import survey_network
+result = survey_network(allow_probe=True)
+payload = result.to_dict()            # JSON-serialisable, versioned
+```
+
+Transmission is explicit per call:
+
+| Setting | What it sends |
+|---|---|
+| `allow_probe=False`, explicit `hosts` | no broadcast; HTTP GETs to those hosts only |
+| `allow_probe=True` (default) | the UDP discovery broadcast, then HTTP GETs |
+| `allow_register_bus=True` | additionally opens a TCP 5200 control session on non-COEX models |
+
+**`allow_register_bus` is off by default and should stay off for crewbox.** That
+session may be exclusive, and taking it from NovaLCT mid-show is the one thing a
+monitoring tool must not do. A test asserts that with the default, a register-bus
+device receives *no frames at all*.
+
+### Coverage is reported, not assumed
+
+`monitoring_available` is `"http"`, `"register-bus"`, `"snmp-if-enabled"` or
+`"none"`, so a pane can show "not available" rather than a misleading zero. A
+VX4S surveyed without the register-bus opt-in comes back unreachable with the
+reason in `errors` — that is the correct answer for that model, not a failure.
+
+### Serialised shape
+
+`schema_version` is `1`. **Check it and refuse a version you do not
+understand** rather than mis-reading fields; it will be bumped on any
+incompatible change.
+
+```json
+{
+  "schema_version": 1,
+  "timestamp": 1786530453.2,
+  "probed": false,
+  "devices": [{
+    "address": "10.0.0.20",
+    "reachable": true,
+    "family": "coex",
+    "model": "MX40 Pro",
+    "model_id": null,
+    "name": "Main wall controller",
+    "serial": "…",
+    "control_path": "http",
+    "ethernet_ports": 4,
+    "fibre_ports": 0,
+    "inputs": [{"label": "HDMI", "type": "HDMI", "switchable": true}],
+    "monitoring_available": "http",
+    "discovered_by": "discovery",
+    "status": {
+      "display_mode": 0,
+      "cabinets_total": 8,
+      "cabinets_online": 8,
+      "cabinets_offline": [],
+      "hottest_cabinet": {"id": "…", "temperature": 31.0},
+      "signal_present": ["HDMI 1", "12G-SDI"],
+      "screens": 1,
+      "healthy": true
+    },
+    "errors": []
+  }]
+}
+```
+
+`status` is `null` when no read-only interface exists. `errors` carries
+per-endpoint failures without failing the survey — an endpoint the firmware does
+not implement is normal, not an outage.
+
+Field names inside `status` are **this repository's** contract and stable under
+`schema_version`. Field names *inside the raw COEX payloads* are NovaStar's and
+remain provisional until confirmed against firmware; `survey` exists partly to
+insulate consumers from that.
+
+---
+
 ## Summary for crewbox
 
 | Question | Answer |
@@ -283,6 +373,7 @@ connection.
 | `rpProMI:` payload | **UNKNOWN, no sample.** My earlier "appears to carry model and name" was speculation and is withdrawn |
 | Polling 8001 with VMP attached | **Very probably safe for GET, unverified.** Use the read-only client, 10–30 s cadence, back off on code 5 |
 | Monitoring over GET | **Rich over SNMP** (official OIDs, incl. per-card status and per-input signal); **good over HTTP** with provisional field names; **nothing** on VX4S / UHD Jr without a control session |
+| Consuming it | `survey_network()` / `novasun survey --json`, `schema_version` 1. Leave `allow_register_bus` off |
 
 The two things worth doing on the first day with hardware, in order: **capture
 one `rpProMI:` reply** (settles questions 1 and 2 in a minute), and **check

@@ -114,6 +114,23 @@ def cmd_outputs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_survey(args: argparse.Namespace) -> int:
+    """Read-only survey of the processors on this network."""
+    from .survey import survey_network
+
+    result = survey_network(
+        hosts=args.host or None,
+        timeout=args.timeout,
+        allow_probe=not args.no_probe,
+        allow_register_bus=args.register_bus,
+    )
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(result.summary())
+    return 0 if result.reachable else 1
+
+
 def cmd_listen(args: argparse.Namespace) -> int:
     """Observe discovery traffic without transmitting anything."""
     from .passive import PassiveListener, build_inventory
@@ -469,6 +486,21 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--cards-per-port", type=int, default=2)
     simulate.add_argument("--latency", type=float, default=0.0)
     simulate.set_defaults(func=cmd_simulate)
+
+    survey_parser = sub.add_parser(
+        "survey", help="read-only survey of the processors on this network"
+    )
+    survey_parser.add_argument("host", nargs="*", help="addresses to include")
+    survey_parser.add_argument(
+        "--no-probe", action="store_true", help="do not broadcast; use given hosts only"
+    )
+    survey_parser.add_argument(
+        "--register-bus",
+        action="store_true",
+        help="fall back to a control session on non-COEX models (not read-only-safe)",
+    )
+    survey_parser.add_argument("--json", action="store_true")
+    survey_parser.set_defaults(func=cmd_survey)
 
     listen_parser = sub.add_parser(
         "listen", help="observe discovery traffic, transmitting nothing"

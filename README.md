@@ -44,6 +44,7 @@ src/novasun/
   names.py       register naming, with an optional externally-imported map
   simulator.py   a fake controller: real chain topology, real error behaviour
   coexsim.py     a fake COEX controller serving the HTTP API
+  survey.py      read-only view of a whole network, in a versioned JSON shape
   passive.py     zero-transmission listener for discovery traffic
   monitor.py     read-only polling: a client that cannot write, rate limited
   snmp.py        COEX SNMP OID map (no client -- use your own)
@@ -69,6 +70,19 @@ python -m novasun monitor 127.0.0.1 --port-index 15 --card-index 2
 The register-bus simulator models a real chain — ports, receiving cards with
 their own registers, `ack = TIMEOUT` for cards that are not there — so
 per-cabinet addressing mistakes fail here rather than on site.
+
+### Surveying a network, read-only
+
+```bash
+python -m novasun survey --json      # discovery + status, no writes
+python -m novasun watch 192.168.1.10 # poll one COEX controller read-only
+python -m novasun listen             # observe, transmitting nothing at all
+```
+
+For consumers that observe rather than control — see
+[`docs/read-only-monitoring.md`](docs/read-only-monitoring.md), which documents
+the serialised contract and is explicit about which facts are official, derived,
+reasoned or still unknown.
 
 ### Working out what a device is, and what it has
 
@@ -157,7 +171,7 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-171 tests. The protocol suite replays 26 frames printed in NovaStar's own
+182 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The

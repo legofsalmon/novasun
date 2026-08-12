@@ -21,6 +21,7 @@ SUBCOMMANDS = [
     ["inputs"],
     ["select-input"],
     ["outputs"],
+    ["survey"],
     ["listen"],
     ["watch"],
     ["simulate"],
