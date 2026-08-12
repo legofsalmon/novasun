@@ -105,6 +105,48 @@ Monitoring block leading fields: byte 0 temperature validity (bit 7 valid, bit 0
 sign), byte 1 temperature in 0.5 °C units, byte 2 humidity (bit 7 valid, low 7
 bits %RH), byte 3 supply voltage (bit 7 valid, low 7 bits in 0.1 V).
 
+### Input selection is per model, register included
+
+This is the single biggest per-model difference on the register bus, and it is
+not just a matter of different values — **the register itself changes**. All
+three maps below were transcribed from NovaStar protocol documents after
+checksum-verifying every frame in them.
+
+| Family | Register | Values |
+|---|---|---|
+| Sending cards (MCTRL660 Pro) | `0x02000023` | SDI `0x01`, HDMI `0x05`, DVI `0x58` |
+| VX4S / VX4S-N | `0x0220002D` | DVI `0x10`, HDMI `0xA0`, VGA1 `0x01`, VGA2 `0x02`, CVBS1 `0x71`, CVBS2 `0x72`, SDI `0x40`, DP `0x90` |
+| NovaPro HD | `0x02200022` | SDI `0x1A`, DVI `0x1C`, HDMI `0x1B`, VGA `0x17`, DP `0x1E`, CVBS `0x02` |
+| COEX (MX/CX/KU) | HTTP | source IDs read from the controller at runtime |
+
+"Switch to HDMI" is therefore `0x0220002D = 0xA0` on a VX4S, `0x02200022 = 0x1B`
+on a NovaPro HD, and `0x02000023 = 0x05` on an MCTRL660 Pro. Three registers,
+three values, one operation. Writing another model's byte to the wrong register
+does nothing useful and may do something unintended.
+
+The NovaPro UHD Jr has no published input-switching document. Its connectors are
+known from the product specification — 1x DP 1.2, 4x DVI, 1x HDMI 2.0 with
+loop-through, 2x 12G-SDI with loop, plus OPT inputs in fibre-converter mode and
+a DVI mosaic composite source — but the select codes are not established, and
+this repository refuses to switch rather than guessing at a live screen.
+
+### Processor-level display control
+
+The VX4S has its own display register, separate from the receiving-card kill and
+lock registers, and **its value ordering is the opposite of the COEX API's**:
+
+| | normal | freeze | blackout |
+|---|---|---|---|
+| VX4S `0x02200050` | `0` | `1` | `2` |
+| COEX HTTP `displaymode` | `0` | `2` | `1` |
+
+Send `1` meaning blackout to a VX4S and you freeze the screen; send `2` and you
+black it out. That is the kind of difference worth encoding once, in data, which
+is what `DisplayControl` on each device profile does.
+
+The VX4S also exposes a front-panel lock at `0x022000F7` (`1` locks the LCD and
+buttons, `0` releases them).
+
 ### COEX-generation controllers
 
 | Address | Size | Meaning | Source |

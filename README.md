@@ -35,7 +35,8 @@ src/novasun/
   transport.py   TCP and serial byte transports, stream reassembly
   discovery.py   UDP 3800 broadcast discovery
   client.py      Controller: read/write registers, display control, monitoring
-  devices.py     model IDs, per-model capabilities, identification
+  devices.py     model IDs, per-model inputs/outputs, capabilities, identification
+  processor.py   one interface over both paths, resolving per-model differences
   coex.py        COEX HTTP API client (port 8001), snapshot and diff
   proxy.py       MITM proxy: log NovaLCT's conversation with a controller
   capture.py     pcap/pcapng parser, register summaries, differential analysis
@@ -65,12 +66,35 @@ The register-bus simulator models a real chain — ports, receiving cards with
 their own registers, `ack = TIMEOUT` for cards that are not there — so
 per-cabinet addressing mistakes fail here rather than on site.
 
-### Working out what a device is
+### Working out what a device is, and what it has
 
 ```bash
-python -m novasun identify 192.168.1.40   # model, family, ports, which path
-python -m novasun models                  # the whole device table
+python -m novasun identify 192.168.1.40     # model, family, ports, which path
+python -m novasun inputs 192.168.1.40       # connectors, and which are switchable
+python -m novasun outputs 192.168.1.40      # ethernet ports, fibre, loop-throughs
+python -m novasun select-input 192.168.1.40 "VGA 2"
+python -m novasun models                    # the whole device table
 ```
+
+Processors differ in what connectors they have, what byte selects each one, and
+how many ports they drive — "switch to HDMI" is `0x0220002D = 0xA0` on a VX4S but
+`0x02200022 = 0x1B` on a NovaPro HD, and blackout/freeze values are *swapped*
+between the VX4S register and the COEX HTTP API. `Processor` resolves all of it
+from the model profile:
+
+```python
+from novasun.processor import Processor
+
+with Processor.connect("192.168.1.40") as processor:
+    print(processor.describe())
+    processor.select_input("HDMI")   # right register, right value, right path
+    processor.freeze()               # right value for this model
+```
+
+Where a connector exists but its select code has not been established — every
+input on the NovaPro UHD Jr — switching raises `CapabilityUnknown` rather than
+writing a guessed byte at a live screen. See
+[`docs/target-hardware.md`](docs/target-hardware.md).
 
 ### Against real hardware
 
@@ -129,7 +153,7 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-116 tests. The protocol suite replays 26 frames printed in NovaStar's own
+145 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The

@@ -1,23 +1,42 @@
-"""Model identification and per-model capabilities.
+"""Model identification, per-model I/O, and capabilities.
 
 Three families matter for Ethernet control, and they do not behave alike:
 
 * **COEX** (MX series, CX, KU) -- an official JSON API on port 8001 is the
   primary interface; the register bus is the compatibility path. These do not
   appear in NovaLCT's model table at all, so they are identified by probing
-  HTTP rather than by model ID.
+  HTTP rather than by model ID, and their inputs are *enumerated at runtime*
+  from the API rather than being known in advance.
 * **Video processors** (VX4S, NovaPro UHD Jr, MCTRL4K, VX1000 ...) -- register
-  bus on TCP 5200, with input switching and processor-specific registers.
+  bus on TCP 5200, with model-specific input switching.
 * **Sending cards** (MCTRL660 Pro, MSD/MCTRL series) -- register bus, no video
-  processing.
+  processing beyond input selection.
 
-Model IDs come from a 2-byte read of register 0x00000002. The values below were
-taken from the ``NSCardType`` enum generated from decompiled NovaLCT assemblies,
-and port counts from its ``GetPortNumber``. One of them -- MCTRL660 Pro,
-``0x1107`` -- also appears in an official NovaStar document, which agrees, so
-the table has at least one independent check against the vendor's own bytes.
-Everything else here is unverified until you point it at hardware; see
-``PROVENANCE``.
+## Why input switching is modelled per device
+
+It is not merely that the values differ. **The register differs too**, and the
+meaning of a display-mode value differs, and both are verified against
+NovaStar's own documents:
+
+===================  ==============  =====================================
+Family               Register        Values
+===================  ==============  =====================================
+Sending cards        ``0x02000023``  SDI 0x01, HDMI 0x05, DVI 0x58
+VX4S                 ``0x0220002D``  DVI 0x10, HDMI 0xA0, VGA1 0x01, ...
+NovaPro HD           ``0x02200022``  SDI 0x1A, DVI 0x1C, HDMI 0x1B, ...
+COEX                 HTTP            source IDs read from the controller
+===================  ==============  =====================================
+
+Display mode is worse: on a VX4S, ``0x02200050`` takes 1 = freeze and
+2 = blackout, while the COEX HTTP API takes 1 = blackout and 2 = freeze. Sending
+the wrong one to a live screen blacks it out when you meant to freeze it. Nothing
+about that is inferable at runtime, so it is data on the profile.
+
+Everything here is sourced -- see ``PROVENANCE`` and ``docs/sources.md``. Model
+IDs and port counts come from NovaLCT's decompiled tables; one entry (MCTRL660
+Pro, ``0x1107``) also appears in a NovaStar document and agrees. Input registers
+and values come from the per-model protocol documents, and every frame in them
+was checksum-verified before being transcribed.
 """
 
 from __future__ import annotations
@@ -35,68 +54,321 @@ class Family(str, Enum):
     UNKNOWN = "unknown"
 
 
+class ConnectorType(str, Enum):
+    HDMI = "HDMI"
+    DVI = "DVI"
+    SDI = "SDI"
+    DP = "DisplayPort"
+    VGA = "VGA"
+    CVBS = "CVBS"
+    OPT = "Optical"
+    RJ45 = "Ethernet"
+    COMPOSITE_SOURCE = "Composite"
+    """A source made of several physical inputs, e.g. the UHD Jr's DVI mosaic."""
+
+
+@dataclass(frozen=True)
+class InputConnector:
+    """One selectable input on a processor.
+
+    ``select_value`` is what gets written to the model's input register. It is
+    ``None`` when the connector is known to exist but its code has not been
+    established -- the application should show the input and refuse to switch to
+    it, rather than guessing a value at a live screen.
+    """
+
+    type: ConnectorType
+    label: str
+    select_value: int | None = None
+    notes: str = ""
+
+    @property
+    def switchable(self) -> bool:
+        return self.select_value is not None
+
+
+@dataclass(frozen=True)
+class OutputConnector:
+    """A non-Ethernet output: fibre, loop-through, monitor out."""
+
+    type: ConnectorType
+    label: str
+    count: int = 1
+    loop_through: bool = False
+
+
+@dataclass(frozen=True)
+class DisplayControl:
+    """How a model implements normal / blackout / freeze.
+
+    Two mechanisms exist and they are not interchangeable:
+
+    * ``receiving_card`` -- broadcast writes to the kill (0x02000100) and lock
+      (0x02000102) registers on every receiving card. Universal, works anywhere.
+    * ``processor`` -- a single register on the processor itself, with a
+      model-specific value for each mode. Faster, and the only way to blank a
+      processor's output rather than its cards.
+    """
+
+    register: int | None = None
+    normal: int = 0
+    blackout: int = 1
+    freeze: int = 2
+
+    @property
+    def is_processor_level(self) -> bool:
+        return self.register is not None
+
+    def value_for(self, mode: str) -> int:
+        return {"normal": self.normal, "blackout": self.blackout, "freeze": self.freeze}[mode]
+
+
+RECEIVING_CARD_DISPLAY = DisplayControl()
+"""Sentinel: use the universal receiving-card kill/lock registers."""
+
+# Input select registers, per family. Confirmed against NovaStar documents.
+INPUT_REGISTER_SENDING_CARD = 0x0200_0023
+INPUT_REGISTER_VX4S = 0x0220_002D
+INPUT_REGISTER_NOVAPRO_HD = 0x0220_0022
+
+# VX4S processor-level display and front-panel lock, from the VX4S document.
+VX4S_DISPLAY_REGISTER = 0x0220_0050
+VX4S_PANEL_LOCK_REGISTER = 0x0220_00F7
+
+
 @dataclass(frozen=True)
 class DeviceProfile:
-    """What a model is and how to talk to it."""
+    """What a model is, what it has, and how to talk to it."""
 
     name: str
     family: Family
     model_id: int | None = None
     port_count: int = 2
+    """Ethernet (RJ45) output ports carrying receiving cards."""
     control_port: int = TCP_PORT
     http_api: bool = False
-    """Serves the COEX JSON API on port 8001."""
-    input_select: bool = False
-    """Has a switchable input, i.e. the DVI_SELECT register means something."""
+    inputs: tuple[InputConnector, ...] = ()
+    """Empty for COEX, whose inputs are read from the controller at runtime."""
+    outputs: tuple[OutputConnector, ...] = ()
+    """Outputs other than the RJ45 ports: fibre, loop-through, monitor out."""
+    input_register: int | None = None
+    display: DisplayControl = RECEIVING_CARD_DISPLAY
     presets: bool = False
-    """Supports preset recall (COEX register 0x0A000002 or the HTTP API)."""
+    panel_lock_register: int | None = None
     notes: str = ""
 
     @property
     def is_known(self) -> bool:
         return self.family is not Family.UNKNOWN
 
+    @property
+    def input_select(self) -> bool:
+        """Whether switching inputs is possible on this model at all."""
+        return bool(self.inputs) or self.http_api or self.input_register is not None
 
-# Deliberately not the full 280-entry table: these are the models reachable over
-# Ethernet that are worth naming. Anything else falls back to `unknown_profile`,
-# which still works -- the register bus does not require us to know the model.
+    @property
+    def switchable_inputs(self) -> tuple[InputConnector, ...]:
+        return tuple(connector for connector in self.inputs if connector.switchable)
+
+    @property
+    def fibre_ports(self) -> int:
+        return sum(o.count for o in self.outputs if o.type is ConnectorType.OPT)
+
+    def find_input(self, label: str) -> InputConnector | None:
+        """Match an input by label or connector type, case-insensitively.
+
+        ``"hdmi"`` finds ``HDMI 1`` when that is the only HDMI. An ambiguous
+        bare type returns ``None`` rather than picking one.
+        """
+        wanted = label.strip().lower()
+        for connector in self.inputs:
+            if connector.label.lower() == wanted:
+                return connector
+        matches = [c for c in self.inputs if c.type.value.lower() == wanted]
+        return matches[0] if len(matches) == 1 else None
+
+
+def _numbered(kind: ConnectorType, values: dict[str, int | None], notes: str = "") -> tuple:
+    return tuple(
+        InputConnector(kind, label, value, notes) for label, value in values.items()
+    )
+
+
+#: VX4S / VX4S-N, from the VX4S Command Protocol document. Every frame in it
+#: was checksum-verified before these values were transcribed.
+VX4S_INPUTS: tuple[InputConnector, ...] = (
+    InputConnector(ConnectorType.DVI, "DVI", 0x10),
+    InputConnector(ConnectorType.HDMI, "HDMI", 0xA0),
+    InputConnector(ConnectorType.VGA, "VGA 1", 0x01),
+    InputConnector(ConnectorType.VGA, "VGA 2", 0x02),
+    InputConnector(ConnectorType.CVBS, "CVBS 1", 0x71),
+    InputConnector(ConnectorType.CVBS, "CVBS 2", 0x72),
+    InputConnector(ConnectorType.SDI, "SDI", 0x40),
+    InputConnector(ConnectorType.DP, "DP", 0x90),
+)
+
+#: NovaPro HD, from the PRO HD input-source document.
+NOVAPRO_HD_INPUTS: tuple[InputConnector, ...] = (
+    InputConnector(ConnectorType.SDI, "SDI", 0x1A),
+    InputConnector(ConnectorType.DVI, "DVI", 0x1C),
+    InputConnector(ConnectorType.HDMI, "HDMI", 0x1B),
+    InputConnector(ConnectorType.VGA, "VGA", 0x17),
+    InputConnector(ConnectorType.DP, "DP", 0x1E),
+    InputConnector(ConnectorType.CVBS, "CVBS", 0x02),
+)
+
+#: MCTRL660 Pro, from its protocol document.
+MCTRL660_PRO_INPUTS: tuple[InputConnector, ...] = (
+    InputConnector(ConnectorType.SDI, "SDI", 0x01),
+    InputConnector(ConnectorType.HDMI, "HDMI", 0x05),
+    InputConnector(
+        ConnectorType.DVI,
+        "DVI",
+        0x58,
+        notes="0x58 is what the document prints; unusual next to 0x01/0x05",
+    ),
+)
+
+#: NovaPro UHD Jr. Connector list from the product specification (1x DP 1.2,
+#: 4x DVI, 1x HDMI 2.0 with loop-through, 2x 12G-SDI with loop, plus OPT inputs
+#: in fibre-converter mode and a DVI mosaic composite source). No input-switching
+#: protocol document was found for it, so the select codes are unknown: the
+#: connectors are listed, and switching to them is refused rather than guessed.
+UHD_JR_INPUTS: tuple[InputConnector, ...] = (
+    InputConnector(ConnectorType.DP, "DP 1.2", None),
+    InputConnector(ConnectorType.HDMI, "HDMI 2.0", None, notes="loop-through"),
+    *_numbered(ConnectorType.DVI, {f"DVI {n}": None for n in range(1, 5)}),
+    *_numbered(ConnectorType.SDI, {"SDI 1": None, "SDI 2": None}, "12G-SDI, with loop"),
+    InputConnector(ConnectorType.OPT, "OPT 1", None, notes="fibre-converter mode"),
+    InputConnector(ConnectorType.OPT, "OPT 2", None, notes="fibre-converter mode"),
+    InputConnector(
+        ConnectorType.COMPOSITE_SOURCE,
+        "DVI MOSAIC",
+        None,
+        notes="up to 4 DVI inputs combined into one source",
+    ),
+)
+
+UHD_JR_OUTPUTS: tuple[OutputConnector, ...] = (
+    OutputConnector(ConnectorType.OPT, "Optical fibre", 4),
+    OutputConnector(ConnectorType.HDMI, "HDMI loop", 1, loop_through=True),
+    OutputConnector(ConnectorType.SDI, "SDI loop", 2, loop_through=True),
+)
+
+
 MODELS: dict[int, DeviceProfile] = {
     # --- video processors ---------------------------------------------------
-    0x6107: DeviceProfile("VX4S", Family.VIDEO_PROCESSOR, 0x6107, 4, input_select=True),
-    0x612A: DeviceProfile("VX4S-N", Family.VIDEO_PROCESSOR, 0x612A, 4, input_select=True),
+    0x6107: DeviceProfile(
+        "VX4S",
+        Family.VIDEO_PROCESSOR,
+        0x6107,
+        4,
+        inputs=VX4S_INPUTS,
+        input_register=INPUT_REGISTER_VX4S,
+        display=DisplayControl(VX4S_DISPLAY_REGISTER, normal=0, blackout=2, freeze=1),
+        panel_lock_register=VX4S_PANEL_LOCK_REGISTER,
+        notes="blackout is 2 and freeze is 1 here -- the opposite of the COEX API",
+    ),
+    0x612A: DeviceProfile(
+        "VX4S-N",
+        Family.VIDEO_PROCESSOR,
+        0x612A,
+        4,
+        inputs=VX4S_INPUTS,
+        input_register=INPUT_REGISTER_VX4S,
+        display=DisplayControl(VX4S_DISPLAY_REGISTER, normal=0, blackout=2, freeze=1),
+        panel_lock_register=VX4S_PANEL_LOCK_REGISTER,
+        notes="assumed identical to the VX4S; confirm on hardware",
+    ),
     0x6205: DeviceProfile(
         "NovaPro UHD Jr",
         Family.VIDEO_PROCESSOR,
         0x6205,
         16,
-        input_select=True,
-        notes="4K all-in-one; 16 output ports; also drivable from V-Can",
+        inputs=UHD_JR_INPUTS,
+        outputs=UHD_JR_OUTPUTS,
+        input_register=None,
+        notes="4K all-in-one; 16 Neutrik + 4 fibre outputs; input codes unconfirmed",
     ),
-    0x7504: DeviceProfile("NovaPro UHD", Family.VIDEO_PROCESSOR, 0x7504, 16, input_select=True),
-    0x6101: DeviceProfile("NovaPro HD", Family.VIDEO_PROCESSOR, 0x6101, 4, input_select=True),
-    0x6121: DeviceProfile("NovaPro HD II", Family.VIDEO_PROCESSOR, 0x6121, 8, input_select=True),
-    0x1103: DeviceProfile("MCTRL4K", Family.VIDEO_PROCESSOR, 0x1103, 16, input_select=True),
+    0x7504: DeviceProfile(
+        "NovaPro UHD",
+        Family.VIDEO_PROCESSOR,
+        0x7504,
+        16,
+        inputs=NOVAPRO_HD_INPUTS,
+        input_register=INPUT_REGISTER_NOVAPRO_HD,
+        notes="input map assumed shared with NovaPro HD; confirm on hardware",
+    ),
+    0x6101: DeviceProfile(
+        "NovaPro HD",
+        Family.VIDEO_PROCESSOR,
+        0x6101,
+        4,
+        inputs=NOVAPRO_HD_INPUTS,
+        input_register=INPUT_REGISTER_NOVAPRO_HD,
+    ),
+    0x6121: DeviceProfile(
+        "NovaPro HD II",
+        Family.VIDEO_PROCESSOR,
+        0x6121,
+        8,
+        inputs=NOVAPRO_HD_INPUTS,
+        input_register=INPUT_REGISTER_NOVAPRO_HD,
+        notes="input map assumed shared with NovaPro HD; confirm on hardware",
+    ),
+    0x1103: DeviceProfile(
+        "MCTRL4K",
+        Family.VIDEO_PROCESSOR,
+        0x1103,
+        16,
+        inputs=(
+            InputConnector(ConnectorType.HDMI, "HDMI", None),
+            InputConnector(ConnectorType.DVI, "DVI", None),
+            InputConnector(ConnectorType.DP, "DP", None),
+        ),
+        notes="input codes unconfirmed",
+    ),
     0x1105: DeviceProfile("MCTRL1600", Family.VIDEO_PROCESSOR, 0x1105, 16),
-    0x620C: DeviceProfile("VX1000", Family.VIDEO_PROCESSOR, 0x620C, 10, input_select=True),
+    0x620C: DeviceProfile(
+        "VX1000",
+        Family.VIDEO_PROCESSOR,
+        0x620C,
+        10,
+        inputs=(
+            InputConnector(ConnectorType.HDMI, "HDMI", None),
+            InputConnector(ConnectorType.DVI, "DVI", None),
+            InputConnector(ConnectorType.DP, "DP", None),
+            InputConnector(ConnectorType.SDI, "SDI", None),
+        ),
+        notes="input codes unconfirmed",
+    ),
     0x622B: DeviceProfile(
         "VX1000 Pro",
         Family.VIDEO_PROCESSOR,
         0x622B,
         10,
         control_port=VX_PRO_TCP_PORT,
-        input_select=True,
         notes="VX Pro series listens on 15200, not 5200",
     ),
-    0x6109: DeviceProfile("VX5", Family.VIDEO_PROCESSOR, 0x6109, 4, input_select=True),
-    0x6106: DeviceProfile("VX4", Family.VIDEO_PROCESSOR, 0x6106, 4, input_select=True),
-    0x6105: DeviceProfile("VX2", Family.VIDEO_PROCESSOR, 0x6105, 2, input_select=True),
+    0x6109: DeviceProfile(
+        "VX5", Family.VIDEO_PROCESSOR, 0x6109, 4, inputs=VX4S_INPUTS,
+        input_register=INPUT_REGISTER_VX4S,
+        notes="input map assumed shared with the VX4S; confirm on hardware",
+    ),
+    0x6106: DeviceProfile(
+        "VX4", Family.VIDEO_PROCESSOR, 0x6106, 4, inputs=VX4S_INPUTS,
+        input_register=INPUT_REGISTER_VX4S,
+        notes="the VX4S document's own device-ID example reads back 0x6106",
+    ),
+    0x6105: DeviceProfile("VX2", Family.VIDEO_PROCESSOR, 0x6105, 2),
     # --- sending cards ------------------------------------------------------
     0x1107: DeviceProfile(
         "MCTRL660 Pro",
         Family.SENDING_CARD,
         0x1107,
         6,
-        input_select=True,
+        inputs=MCTRL660_PRO_INPUTS,
+        input_register=INPUT_REGISTER_SENDING_CARD,
         notes="model ID confirmed by NovaStar's own protocol document",
     ),
     0x1108: DeviceProfile("MCTRL660 ROE", Family.SENDING_CARD, 0x1108, 4),
@@ -106,12 +378,19 @@ MODELS: dict[int, DeviceProfile] = {
     0x0101: DeviceProfile("Controller", Family.SENDING_CARD, 0x0101, 4),
 }
 
-# COEX controllers are identified by the HTTP API, not by model ID: they post-
-# date NovaLCT's table and are managed by VMP. Names are matched against what
-# /api/v1/device reports.
+#: COEX controllers are identified by the HTTP API, not by model ID, and their
+#: inputs are read from ``/api/v1/device/input/sources`` at runtime -- which is
+#: why `inputs` is empty here. Display-mode values follow the HTTP API's own
+#: convention (1 blackout, 2 freeze), the opposite of the VX4S register.
 COEX_MODELS: dict[str, DeviceProfile] = {
     name.lower(): DeviceProfile(
-        name, Family.COEX, None, ports, http_api=True, input_select=True, presets=True
+        name,
+        Family.COEX,
+        None,
+        ports,
+        http_api=True,
+        presets=True,
+        display=DisplayControl(None, normal=0, blackout=1, freeze=2),
     )
     for name, ports in {
         "MX40 Pro": 4,
@@ -127,15 +406,19 @@ COEX_MODELS: dict[str, DeviceProfile] = {
 
 PROVENANCE = {
     0x1107: "official (MCTRL 660 Pro protocol document) + decompiled NSCardType",
+    0x6107: "model ID decompiled; inputs and display from the VX4S Command Protocol",
+    0x6101: "model ID decompiled; inputs from the PRO HD input-source document",
+    0x6205: "model ID and port count decompiled; connectors from the product "
+    "specification; input select codes unknown",
     "others": "decompiled NSCardType / GetPortNumber -- unverified on hardware",
-    "coex": "product documentation; identified by HTTP probe, not by model ID",
+    "coex": "product documentation; identified by HTTP probe, inputs read at runtime",
 }
 
 
 def unknown_profile(model_id: int | None = None) -> DeviceProfile:
     """A usable profile for a model we have no entry for.
 
-    Not knowing the model is not an error: the register bus works regardless,
+    Not recognising a model is not an error: the register bus works regardless,
     and a conservative two-port assumption only limits enumeration breadth.
     """
     label = f"unknown (0x{model_id:04x})" if model_id is not None else "unknown"
@@ -159,8 +442,8 @@ def coex_profile_for(name: str | None) -> DeviceProfile:
         None,
         port_count=4,
         http_api=True,
-        input_select=True,
         presets=True,
+        display=DisplayControl(None, normal=0, blackout=1, freeze=2),
     )
 
 
@@ -184,12 +467,12 @@ class Identification:
         return "http" if (self.reachable_http and self.profile.http_api) else "register-bus"
 
     def summary(self) -> str:
+        profile = self.profile
         lines = [
             f"{self.host}",
-            f"  model        {self.profile.name}"
-            + (f"  (0x{self.profile.model_id:04x})" if self.profile.model_id else ""),
-            f"  family       {self.profile.family.value}",
-            f"  output ports {self.profile.port_count}",
+            f"  model        {profile.name}"
+            + (f"  (0x{profile.model_id:04x})" if profile.model_id else ""),
+            f"  family       {profile.family.value}",
             f"  control      {self.preferred_path}",
         ]
         if self.reachable_register_bus:
@@ -200,8 +483,28 @@ class Identification:
             lines.append(f"  serial       {self.serial}")
         if self.device_name:
             lines.append(f"  name         {self.device_name}")
-        if self.profile.notes:
-            lines.append(f"  note         {self.profile.notes}")
+
+        outputs = [f"{profile.port_count}x Ethernet"]
+        outputs += [f"{o.count}x {o.label}" for o in profile.outputs]
+        lines.append(f"  outputs      {', '.join(outputs)}")
+
+        if profile.http_api:
+            lines.append("  inputs       read from the controller at runtime")
+        elif profile.inputs:
+            switchable = len(profile.switchable_inputs)
+            detail = ", ".join(connector.label for connector in profile.inputs)
+            lines.append(f"  inputs       {detail}")
+            if switchable != len(profile.inputs):
+                lines.append(
+                    f"               {switchable}/{len(profile.inputs)} have known "
+                    "select codes"
+                )
+        if profile.display.is_processor_level:
+            lines.append(f"  display      processor register 0x{profile.display.register:08x}")
+        else:
+            lines.append("  display      receiving-card kill/lock registers")
+        if profile.notes:
+            lines.append(f"  note         {profile.notes}")
         return "\n".join(lines)
 
 

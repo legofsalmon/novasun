@@ -63,16 +63,74 @@ def cmd_identify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_inputs(args: argparse.Namespace) -> int:
+    """List a device's inputs, and whether each can actually be switched to."""
+    from .processor import Processor
+
+    with Processor.connect(args.host, timeout=args.timeout) as processor:
+        states = processor.inputs()
+        if not states:
+            print(f"{processor.profile.name} reports no switchable inputs")
+            return 0
+        print(f"{processor.profile.name}")
+        for state in states:
+            mark = " " if state.switchable else "*"
+            connected = ""
+            if state.connected is not None:
+                connected = "  [signal]" if state.connected else "  [no signal]"
+            note = f"  -- {state.notes}" if state.notes else ""
+            print(f" {mark} {state.label:<14} {state.type:<12}{connected}{note}")
+        if any(not state.switchable for state in states):
+            print("\n * select code not established for this model; see "
+                  "docs/capture-workflow.md")
+    return 0
+
+
+def cmd_select_input(args: argparse.Namespace) -> int:
+    from .processor import CapabilityUnknown, NotSupported, Processor
+
+    try:
+        with Processor.connect(args.host, timeout=args.timeout) as processor:
+            processor.select_input(args.input)
+    except (CapabilityUnknown, NotSupported) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"input switched to {args.input}")
+    return 0
+
+
+def cmd_outputs(args: argparse.Namespace) -> int:
+    from .processor import Processor
+
+    with Processor.connect(args.host, timeout=args.timeout) as processor:
+        detail = processor.outputs()
+        print(f"{processor.profile.name}")
+        print(f"  ethernet ports {detail['ethernet_ports']}")
+        if detail["fibre_ports"]:
+            print(f"  fibre ports    {detail['fibre_ports']}")
+        for output in detail["other"]:
+            suffix = " (loop-through)" if output["loop_through"] else ""
+            print(f"  {output['count']}x {output['label']}{suffix}")
+    return 0
+
+
 def cmd_models(args: argparse.Namespace) -> int:
     rows = sorted(devices.MODELS.values(), key=lambda p: (p.family.value, p.name))
     rows += sorted(set(devices.COEX_MODELS.values()), key=lambda p: p.name)
-    print(f"{'model':<18} {'family':<16} {'id':<8} ports  control")
+    print(f"{'model':<18} {'id':<8} {'eth':>4} {'fibre':>6}  {'inputs':<28} control")
     for profile in rows:
         identifier = f"0x{profile.model_id:04x}" if profile.model_id else "-"
         control = "http 8001" if profile.http_api else f"tcp {profile.control_port}"
+        if profile.http_api:
+            inputs = "(read from controller)"
+        elif profile.inputs:
+            known = len(profile.switchable_inputs)
+            inputs = f"{len(profile.inputs)} ({known} switchable)"
+        else:
+            inputs = "-"
         print(
-            f"{profile.name:<18} {profile.family.value:<16} {identifier:<8} "
-            f"{profile.port_count:<6} {control}"
+            f"{profile.name:<18} {identifier:<8} {profile.port_count:>4} "
+            f"{profile.fibre_ports or '':>6}  {inputs:<28} {control}"
         )
     return 0
 
@@ -367,6 +425,19 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--cards-per-port", type=int, default=2)
     simulate.add_argument("--latency", type=float, default=0.0)
     simulate.set_defaults(func=cmd_simulate)
+
+    inputs_parser = sub.add_parser("inputs", help="list a device's inputs")
+    inputs_parser.add_argument("host")
+    inputs_parser.set_defaults(func=cmd_inputs)
+
+    select = sub.add_parser("select-input", help="switch input by label")
+    select.add_argument("host")
+    select.add_argument("input", help='e.g. "HDMI", "VGA 2", "12G-SDI"')
+    select.set_defaults(func=cmd_select_input)
+
+    outputs_parser = sub.add_parser("outputs", help="list a device's outputs")
+    outputs_parser.add_argument("host")
+    outputs_parser.set_defaults(func=cmd_outputs)
 
     with_host("info", "identify the connected device(s)").set_defaults(func=cmd_info)
 

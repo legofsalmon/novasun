@@ -10,7 +10,9 @@ Everything in this repository traces back to one of these. Retrieved August 2026
 | COEX Series Interface API User Manual (2023) | The HTTP API on port 8001: endpoints, JSON bodies, global response codes. | [oss.novastar.tech](https://oss.novastar.tech/uploads/2023/02/COEX-Series-Interface-API-User-Manual.pdf) |
 | RS232 Protocol for Nova M3 Control System V1.9 (2018) | The authoritative field-by-field specification of the register bus, plus command tables for monitoring, power, brightness, gamma, display control, calibration, redundancy, EDID and cabinet size. 71 pages. | Bundled in `sarakusha/novastar` under `doc/` |
 | Protocol for MCTRL 660 Pro | Input switching and display control with verified hex, including the device-ID probe. | Bundled in `sarakusha/novastar` under `doc/` |
-| VX4S Input Switching protocol · PRO HD input source protocol | Model-specific input switching. | Bundled in `sarakusha/novastar`; also attached to [companion-module-novastar-controller issue #4](https://github.com/bitfocus/companion-module-novastar-controller/issues/4) |
+| VX4S Command Protocol | The VX4S input register `0x0220002D` and its eight input codes, the processor display register `0x02200050` (0 normal, 1 freeze, 2 blackout) and the front-panel lock `0x022000F7`. Every frame checksum-verified. | Bundled in `sarakusha/novastar`; also attached to [companion-module-novastar-controller issue #4](https://github.com/bitfocus/companion-module-novastar-controller/issues/4) |
+| Switching input sources protocol of PRO HD | The NovaPro HD input register `0x02200022` and its six input codes. Every frame checksum-verified. | As above |
+| NovaPro UHD Jr Specifications V1.5.1 | Connector complement: 1x DP 1.2, 4x DVI, 1x HDMI 2.0 with loop, 2x 12G-SDI with loop, 16x Neutrik Ethernet and 4x optical fibre outputs. | [oss.novastar.tech](https://oss.novastar.tech/uploads/2024/11/NovaPro-UHD-Jr-All-in-One-Controller-Specifications-V1.5.1.pdf) |
 | Nova Mars LED SDK User Manual V1.5.2 (2016) | The legacy official Windows SDK's API surface. | Bundled in `sarakusha/novastar` under `doc/` |
 | COEX SNMP Protocol Instructions V1.4.0 (2024) | Published MIB for COEX monitoring. | [oss.novastar.tech](https://oss.novastar.tech/uploads/2024/07/SNMP-Protocol-Instructions-V1.4.0.pdf) |
 | COEX API online documentation | Browsable version of the HTTP API, endpoint by endpoint. | [api.coex.novastar.tech](https://api.coex.novastar.tech/en/doc-7530630) |
@@ -32,7 +34,10 @@ Everything in this repository traces back to one of these. Retrieved August 2026
 The wire format was reconstructed from the M3 and COEX documents, then checked
 against the `sarakusha/novastar` codec and against every hex frame printed in
 any of the sources above — 26 frames spanning 2014 to 2025 and four hardware
-generations. Those frames are the test suite. Two of the 26 do not match their
+generations. Those frames are the test suite. A further 19 frames from the VX4S
+and PRO HD documents were checksum-verified before their input registers and
+select codes were transcribed into the device profiles; all 19 were
+self-consistent. Two of the 26 do not match their
 own stated checksums; both are source errors and are documented as such in
 [`../tests/test_protocol.py`](../tests/test_protocol.py).
 

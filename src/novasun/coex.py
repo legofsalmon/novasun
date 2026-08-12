@@ -132,6 +132,234 @@ class CoexClient:
     def set_working_mode(self, all_in_one: bool) -> None:
         self.request("PUT", "/api/v1/device/hw/mode", {"value": 1 if all_in_one else 0})
 
+    # --- screens ------------------------------------------------------------
+
+    def screen_cabinets(self) -> Any:
+        return self.request("GET", "/api/v1/screen/cabinets")
+
+    def screen_properties(self) -> Any:
+        return self.request("GET", "/api/v1/screen/properties")
+
+    def display_effect(self) -> Any:
+        return self.request("GET", "/api/v1/screen/displayeffect")
+
+    def display_status(self) -> Any:
+        return self.request("GET", "/api/v1/device/screen/displaymode")
+
+    def set_screen_gamma(self, screen_ids: list[str], gamma: float) -> None:
+        self.request("PUT", "/api/v1/screen/gamma", {"idList": screen_ids, "value": gamma})
+
+    def set_screen_color_temperature(self, screen_ids: list[str], kelvin: int) -> None:
+        self.request(
+            "PUT", "/api/v1/screen/colortemperature", {"idList": screen_ids, "value": kelvin}
+        )
+
+    def set_screen_colour_gamut(self, screen_ids: list[str], gamut: str | int) -> None:
+        self.request("PUT", "/api/v1/screen/gamut", {"idList": screen_ids, "value": gamut})
+
+    def set_brightness_limit(self, enabled: bool, nit: int | None = None) -> None:
+        self.request("PUT", "/api/v1/screen/brightnesslimit/enable", {"value": bool(enabled)})
+        if nit is not None:
+            self.request("PUT", "/api/v1/screen/brightnesslimit", {"value": nit})
+
+    def set_output_bit_depth(self, bits: int) -> None:
+        self.request("PUT", "/api/v1/device/screen/video/bitdepth", {"value": bits})
+
+    def set_multi_mode(self, screen_ids: list[str], mode: int) -> None:
+        self.request("PUT", "/api/v1/screen/multimode", {"idList": screen_ids, "value": mode})
+
+    def set_output_sync(self, source: int) -> None:
+        self.request("PUT", "/api/v1/screen/output/sync", {"value": source})
+
+    def set_3d_enabled(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/screen/3d/enable", {"value": bool(enabled)})
+
+    def set_3d_emitter(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/screen/3d/emitter", {"value": bool(enabled)})
+
+    def switch_layer_source(self, layer: int, source_id: int) -> None:
+        self.request(
+            "PUT", "/api/v1/screen/layer/source", {"layer": layer, "sourceId": source_id}
+        )
+
+    def canvas_mapping(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/screen/canvas/mapping", {"value": bool(enabled)})
+
+    # --- cabinets -----------------------------------------------------------
+
+    def cabinet_count(self) -> Any:
+        return self.request("GET", "/api/v1/screen/cabinet/count")
+
+    def set_cabinet_rgb_brightness(
+        self, cabinet_ids: list[int], red: float, green: float, blue: float
+    ) -> None:
+        self.request(
+            "PUT",
+            "/api/v1/device/cabinet/rgb/brightness",
+            {"idList": cabinet_ids, "red": red, "green": green, "blue": blue},
+        )
+
+    def set_cabinet_rgbw_components(self, cabinet_ids: list[int], **components: float) -> None:
+        self.request(
+            "PUT",
+            "/api/v1/device/cabinet/rgbwbrightness",
+            {"idList": cabinet_ids, **components},
+        )
+
+    def set_cabinet_gamma(self, cabinet_ids: list[int], gamma: float) -> None:
+        self.request(
+            "PUT", "/api/v1/device/cabinet/gamma", {"idList": cabinet_ids, "value": gamma}
+        )
+
+    def set_cabinet_colour_temperature(self, cabinet_ids: list[int], kelvin: int) -> None:
+        self.request(
+            "PUT",
+            "/api/v1/device/cabinet/colortemperature",
+            {"idList": cabinet_ids, "value": kelvin},
+        )
+
+    def set_cabinet_test_pattern(self, cabinet_ids: list[int], mode: int) -> None:
+        self.request(
+            "PUT", "/api/v1/device/cabinet/testpattern", {"idList": cabinet_ids, "mode": mode}
+        )
+
+    def set_cabinet_multi_mode(self, cabinet_ids: list[int], mode: int) -> None:
+        self.request(
+            "PUT", "/api/v1/device/cabinet/multimode", {"idList": cabinet_ids, "value": mode}
+        )
+
+    def set_prestored_image(self, cabinet_ids: list[int], mode: int) -> None:
+        """What a cabinet shows when its signal disappears."""
+        self.request(
+            "PUT", "/api/v1/device/cabinet/prestoreimage", {"idList": cabinet_ids, "value": mode}
+        )
+
+    def move_cabinet(self, cabinet_id: int, x: int, y: int) -> None:
+        self.request(
+            "PUT", "/api/v1/device/cabinet/position", {"id": cabinet_id, "x": x, "y": y}
+        )
+
+    def set_thermal_compensation(
+        self, cabinet_ids: list[int], enabled: bool, amount: int | None = None, mode: int | None = None
+    ) -> None:
+        self.request(
+            "PUT",
+            "/api/v1/device/correctionop/cabinets/thermacal/enable",
+            {"idList": cabinet_ids, "value": bool(enabled)},
+        )
+        if amount is not None:
+            self.request(
+                "PUT",
+                "/api/v1/device/correctionop/cabinets/thermacal/amount",
+                {"idList": cabinet_ids, "value": amount},
+            )
+        if mode is not None:
+            self.request(
+                "PUT",
+                "/api/v1/device/correctionop/cabinets/thermacal/mode",
+                {"idList": cabinet_ids, "value": mode},
+            )
+
+    def set_colour_correction(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/device/correctionop/enable", {"value": bool(enabled)})
+
+    def set_cabinet_gamut(self, cabinet_ids: list[int], gamut: str | int) -> None:
+        self.request(
+            "PUT",
+            "/api/v1/device/correctionop/cabinets/gamut",
+            {"idList": cabinet_ids, "value": gamut},
+        )
+
+    # --- input --------------------------------------------------------------
+
+    def input_data(self) -> Any:
+        return self.request("GET", "/api/v1/device/input")
+
+    def set_edid(self, input_id: int, width: int, height: int, frame_rate: int) -> None:
+        self.request(
+            "PUT",
+            f"/api/v1/device/input/{input_id}/edid",
+            {"resolution": {"width": width, "height": height, "frameRate": frame_rate}},
+        )
+
+    def set_colour_space(self, input_id: int, value: int | str) -> None:
+        self.request("PUT", f"/api/v1/device/input/{input_id}/colorspace", {"value": value})
+
+    def set_colour_gamut(self, input_id: int, value: int | str) -> None:
+        self.request("PUT", f"/api/v1/device/input/{input_id}/colourgamut", {"value": value})
+
+    def set_quantisation_range(self, input_id: int, value: int | str) -> None:
+        self.request("PUT", f"/api/v1/device/input/{input_id}/range", {"value": value})
+
+    def set_hdr_mode(self, input_id: int, mode: int) -> None:
+        self.request("PUT", f"/api/v1/device/input/{input_id}/hdrmode", {"value": mode})
+
+    def set_internal_source(self, **parameters: Any) -> None:
+        self.request("PUT", "/api/v1/device/input/internalsource", parameters)
+
+    def set_input_adjustment(self, name: str, value: Any) -> None:
+        """Colour adjustment: shadow, highlight, saturation, contrast, hue, reset."""
+        allowed = {"shadow", "highlight", "saturation", "contrast", "hue", "reset"}
+        if name not in allowed:
+            raise ValueError(f"unknown adjustment {name!r}; expected one of {sorted(allowed)}")
+        self.request("PUT", f"/api/v1/device/input/{name}", {"value": value})
+
+    # --- presets ------------------------------------------------------------
+
+    def update_preset(self, preset_id: str, **fields: Any) -> None:
+        self.request("PUT", "/api/v1/preset/update", {"id": preset_id, **fields})
+
+    # --- device -------------------------------------------------------------
+
+    def audio(self) -> Any:
+        return self.request("GET", "/api/v1/device/audio")
+
+    def set_audio(self, volume: int | None = None, mute: bool | None = None) -> None:
+        body: dict[str, Any] = {}
+        if volume is not None:
+            body["volume"] = volume
+        if mute is not None:
+            body["mute"] = mute
+        if not body:
+            raise ValueError("set_audio needs a volume or a mute state")
+        self.request("PUT", "/api/v1/device/audio", body)
+
+    def identify_controller(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/device/hw/colorBeacon", {"value": bool(enabled)})
+
+    def backup_status(self) -> Any:
+        return self.request("GET", "/api/v1/device/backup")
+
+    def verify_backup(self) -> None:
+        self.request("PUT", "/api/v1/device/backup/verify", {})
+
+    def multifunction_card(self) -> Any:
+        return self.request("GET", "/api/v1/device/multifunc-card/detailinfo")
+
+    def set_controller_name(self, name: str) -> None:
+        self.request("PUT", "/api/v1/device/hw/customname", {"value": name})
+
+    def set_system_time(self, iso_timestamp: str) -> None:
+        self.request("PUT", "/api/v1/device/hw/systemtime", {"value": iso_timestamp})
+
+    def set_automatic_time(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/device/time/enable", {"value": bool(enabled)})
+
+    def set_timezone(self, timezone: str) -> None:
+        self.request("PUT", "/api/v1/device/timezone", {"value": timezone})
+
+    def snmp_state(self) -> Any:
+        return self.request("GET", "/api/v1/device/snmpstate")
+
+    def set_snmp(self, enabled: bool) -> None:
+        self.request("PUT", "/api/v1/device/snmpstate", {"value": bool(enabled)})
+
+    def export_project(self) -> Any:
+        return self.request("GET", "/api/v1/device/hw/deviceengineeringdocdata")
+
+    def export_log(self) -> Any:
+        return self.request("GET", "/api/v1/device/hw/log")
+
 
 SNAPSHOT_ENDPOINTS = {
     "device": "/api/v1/device",

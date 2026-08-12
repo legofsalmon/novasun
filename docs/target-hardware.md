@@ -52,6 +52,65 @@ profile for anything, and the register bus does not care whether we know what we
 are talking to. An unknown model only means a conservative two-port assumption
 for enumeration.
 
+## Inputs and outputs, per model
+
+Processors differ in three ways at once — which connectors they have, what byte
+selects each one, and how many output ports they drive. All three are data on
+the profile rather than assumptions in the code.
+
+| Model | Inputs | Ethernet out | Other outputs |
+|---|---|---|---|
+| **VX4S** | DVI, HDMI, VGA 1–2, CVBS 1–2, SDI, DP — all switchable | 4 | — |
+| **NovaPro UHD Jr** | DP 1.2, HDMI 2.0, DVI 1–4, 12G-SDI 1–2, OPT 1–2, DVI MOSAIC — *codes unknown* | 16 | 4x fibre, HDMI loop, 2x SDI loop |
+| **NovaPro HD** | SDI, DVI, HDMI, VGA, DP, CVBS — all switchable | 4 | — |
+| **MCTRL660 Pro** | SDI, HDMI, DVI — all switchable | 6 | — |
+| **MX40 Pro** and COEX | read from the controller at runtime | 4 | — |
+
+Two consequences worth designing around.
+
+**The same connector is a different byte on each model.** HDMI is `0xA0` on a
+VX4S, `0x1B` on a NovaPro HD and `0x05` on an MCTRL660 Pro — written to three
+different registers. See
+[`protocol-register-bus.md`](protocol-register-bus.md#input-selection-is-per-model-register-included).
+
+**Blackout and freeze are swapped between the VX4S and COEX.** `1` means freeze
+on a VX4S and blackout over HTTP. An application that hard-codes either will
+eventually black out a screen it meant to freeze.
+
+`Processor` resolves all of this from the profile, so application code stays in
+the user's terms:
+
+```python
+from novasun.processor import Processor
+
+with Processor.connect("192.168.1.40") as processor:
+    for state in processor.inputs():
+        print(state.label, state.type, "switchable" if state.switchable else "unknown code")
+    processor.select_input("HDMI")   # right register, right value, right path
+    processor.freeze()               # right value for this model
+```
+
+From the command line:
+
+```bash
+novasun inputs 192.168.1.40          # what it has, and what can be switched to
+novasun select-input 192.168.1.40 "VGA 2"
+novasun outputs 192.168.1.40         # ethernet ports, fibre, loop-throughs
+novasun models                       # the whole table
+```
+
+### Refusing rather than guessing
+
+Every UHD Jr input is listed but none is switchable, because no input-switching
+document for it was found. `select_input` raises `CapabilityUnknown` — naming
+the capture workflow — instead of writing a plausible byte. A UI should show
+those inputs greyed out rather than hiding them: the connector is real, only our
+knowledge of its code is missing, and one capture session fills the gap.
+
+This is the pattern to keep as the map grows: connectors are facts about the
+hardware, select codes are facts about the protocol, and the two are established
+separately.
+
 ## What differs between the families
 
 **COEX (MX).** Cabinet topology, presets, layers and monitoring are documented

@@ -75,8 +75,16 @@ def _sending_card_state(profile: DeviceProfile, name: str) -> RegisterFile:
     state.write(reg.CONTROLLER_SN_HIGH, bytes.fromhex("001a2b3c4d5e0000"))
     state.write(reg.MAX_PACKET_PROBE, b"\xa8")
     state.write_uint(reg.MAX_PACKET_SIZE, 1024, 2)
-    if profile.input_select:
-        state.write_uint(reg.DVI_SELECT, int(reg.InputSource.HDMI), 1)
+    # Seed the model's own input register with its first switchable input, so a
+    # read-back is meaningful. Which register that is differs per model -- a
+    # VX4S uses 0x0220002D, a sending card 0x02000023.
+    if profile.input_register is not None and profile.switchable_inputs:
+        state.write_uint(
+            profile.input_register, profile.switchable_inputs[0].select_value or 0, 1
+        )
+    if profile.display.is_processor_level:
+        assert profile.display.register is not None
+        state.write_uint(profile.display.register, profile.display.normal, 1)
     label = name.encode()[:64]
     block = bytearray(88)
     block[0] = 0xA8
