@@ -91,6 +91,8 @@ class DeviceState:
     inputs: list[dict[str, Any]] = field(default_factory=list)
     status: dict[str, Any] = field(default_factory=dict)
     capabilities: dict[str, bool] = field(default_factory=dict)
+    receiving_cards: list[dict[str, Any]] = field(default_factory=list)
+    cards_scanned_at: float | None = None
     last_seen: float | None = None
     last_error: str | None = None
     next_retry: float | None = None
@@ -109,6 +111,8 @@ class DeviceState:
             "inputs": self.inputs,
             "status": self.status,
             "capabilities": self.capabilities,
+            "receiving_cards": self.receiving_cards,
+            "cards_scanned_at": self.cards_scanned_at,
             "last_seen": self.last_seen,
             "last_error": self.last_error,
         }
@@ -219,6 +223,9 @@ class Device:
             "panel_lock": profile.panel_lock_register is not None,
             "monitoring": True,
             "test_pattern": not processor.uses_http,
+            # Walking the chain costs a round trip per position, so it is an
+            # explicit action rather than part of every refresh.
+            "scan_cards": not processor.uses_http,
         }
         state.status = self._read_status(processor)
 
@@ -293,6 +300,10 @@ class Device:
             processor.set_test_pattern(str(arguments["pattern"]))
         elif action == "panel_lock":
             processor.set_panel_lock(bool(arguments["locked"]))
+        elif action == "scan_cards":
+            cards = processor.receiving_cards(max_per_port=int(arguments.get("max_per_port", 32)))
+            self.state.receiving_cards = [card.to_dict() for card in cards]
+            self.state.cards_scanned_at = time.time()
         elif action == "apply_preset":
             processor.apply_preset(arguments["identifier"])
         else:

@@ -310,3 +310,34 @@ class TestBlackoutSafety:
         finally:
             server.shutdown()
             server.server_close()
+
+
+class TestReceivingCards:
+    def test_scan_finds_the_chain(self, app, vx4s) -> None:
+        device = add_register_device(app, vx4s)
+        assert device.state.capabilities["scan_cards"]
+        assert device.state.receiving_cards == []  # not scanned on every refresh
+
+        record = app.execute(device.address, "scan_cards")
+        assert record.ok
+        expected = vx4s.port_count * vx4s.cards_per_port
+        assert len(device.state.receiving_cards) == expected
+        assert device.state.cards_scanned_at is not None
+        assert all(card["healthy"] for card in device.state.receiving_cards)
+        assert json.dumps(device.state.to_dict())
+
+    def test_scanning_is_not_part_of_the_refresh_tick(self, app, vx4s) -> None:
+        """A chain walk is a round trip per position; it must be opt-in."""
+        device = add_register_device(app, vx4s)
+        vx4s.log.clear()
+        device.refresh(force=True)
+        probes = [p for p in vx4s.log if p.address == 0x0000_0000 and p.device_type == 1]
+        assert probes == []
+
+    def test_coex_refuses_a_chain_walk(self, app, coex) -> None:
+        """COEX reports cabinets over HTTP; walking the bus is the wrong tool."""
+        device = add_coex_device(app, coex)
+        assert not device.state.capabilities["scan_cards"]
+        record = app.execute(device.address, "scan_cards")
+        assert not record.ok
+        assert "cabinets" in (record.error or "")

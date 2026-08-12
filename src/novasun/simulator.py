@@ -94,8 +94,11 @@ def _sending_card_state(profile: DeviceProfile, name: str) -> RegisterFile:
     return state
 
 
-def _receiving_card_state(port: int, index: int) -> RegisterFile:
+def _receiving_card_state(port: int, index: int, model_id: int = 0x4105) -> RegisterFile:
     state = RegisterFile()
+    # Identity: reading this back is how a card is found at all (M3 doc 3.9).
+    state.write_uint(reg.RECEIVING_CARD_MODEL, model_id, 2)
+    state.write(reg.RECEIVING_CARD_FIRMWARE, bytes([4, 2, 0, 1]))
     state.write(reg.GLOBAL_BRIGHTNESS, b"\xff")
     state.write(reg.RGB_BRIGHTNESS, b"\xff\xff\xff\xff")
     # Monitoring: validity bit set, temperature in 0.5 C units, humidity and
@@ -148,6 +151,7 @@ class SimulatedController(socketserver.ThreadingTCPServer):
         model_id: int = 0x6107,
         ports: int | None = None,
         cards_per_port: int = 2,
+        card_model_id: int = 0x4105,
         chain_index: int = 0,
         latency: float = 0.0,
         name: str | None = None,
@@ -160,8 +164,9 @@ class SimulatedController(socketserver.ThreadingTCPServer):
         self.cards_per_port = cards_per_port
         self.name = name or f"Simulated {self.profile.name}"
         self.sender = _sending_card_state(self.profile, self.name)
+        self.card_model_id = card_model_id
         self.cards: dict[tuple[int, int], RegisterFile] = {
-            (port, index): _receiving_card_state(port, index)
+            (port, index): _receiving_card_state(port, index, card_model_id)
             for port in range(self.port_count)
             for index in range(cards_per_port)
         }

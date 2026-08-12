@@ -193,6 +193,31 @@ function renderDetail() {
     html += '</div>';
   }
 
+  if (caps.scan_cards) {
+    const cards = entry.receiving_cards || [];
+    html += '<h3>Receiving cards</h3><div class="row">' +
+      `<button data-scan="1" ${online ? '' : 'disabled'}>Scan chain</button>`;
+    if (entry.cards_scanned_at) {
+      const bad = cards.filter((c) => !c.healthy).length;
+      const byPort = {};
+      for (const card of cards) byPort[card.port] = (byPort[card.port] || 0) + 1;
+      const detail = Object.keys(byPort).length
+        ? Object.entries(byPort).map(([p, n]) => `port ${p}: ${n}`).join(', ')
+        : 'none found';
+      html += `<span class="empty">${cards.length} card(s) &mdash; ${detail}` +
+              (bad ? ` &mdash; <span style="color:var(--warn)">${bad} unhealthy</span>` : '') +
+              '</span>';
+    } else {
+      html += '<span class="empty">not scanned</span>';
+    }
+    html += '</div>';
+    if (cards.length) {
+      html += '<div class="log">' + cards.map((c) =>
+        `<div class="${c.healthy ? '' : 'fail'}">port ${c.port} card ${c.index} &mdash; ` +
+        `${c.name} fw ${c.firmware || '?'}</div>`).join('') + '</div>';
+    }
+  }
+
   html += '<h3>Display</h3><div class="row">' +
     `<button data-act="normal" ${online ? '' : 'disabled'}>Normal</button>` +
     `<button class="danger" data-act="blackout" ${online ? '' : 'disabled'}>Blackout</button>` +
@@ -237,6 +262,9 @@ function renderDetail() {
     button.onclick = () => act(entry.address, 'test_pattern', { pattern: button.dataset.pattern },
                               `Test pattern ${button.dataset.pattern}`);
   });
+  const scan = panel.querySelector('[data-scan]');
+  if (scan) scan.onclick = () => act(entry.address, 'scan_cards', {}, 'Scan chain');
+
   const lock = panel.querySelector('[data-lock]');
   if (lock) lock.onclick = () => act(entry.address, 'panel_lock', { locked: true }, 'Lock panel');
 

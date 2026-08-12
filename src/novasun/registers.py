@@ -29,6 +29,18 @@ DEVICE_NAME_SPACE = 0x1400_0000  # 88 bytes; 0xA8 marker, length at +17, name at
 SAVE_SENDER_PARAMETERS = 0x0100_0001  # u8, commit RAM settings to flash
 RETURN_FACTORY_VALUES = 0x0100_0002  # u8
 
+# --- Receiving card identity (device_type = RECEIVING_CARD) ----------------
+RECEIVING_CARD_INFO = 0x0000_0000
+"""6 bytes: u16 model ID, then 4 bytes of firmware version.
+
+Reading it is also the presence test. Per the M3 protocol document: "Just try
+reading the receiving card model ID. If the ID can be read back, it means the
+receiving card is working normally." A model ID of 0 means no card, and a
+firmware of all zeros means the card is not running properly.
+"""
+RECEIVING_CARD_MODEL = 0x0000_0000  # u16, non-zero when a card is present
+RECEIVING_CARD_FIRMWARE = 0x0000_0002  # 4 bytes, e.g. 04 02 00 01 -> 4.2.0.1
+
 # --- Receiving card display registers (device_type = RECEIVING_CARD) -------
 GAMMA = 0x0200_0000  # u8
 GLOBAL_BRIGHTNESS = 0x0200_0001  # u8 0..255
@@ -87,6 +99,8 @@ CONFIDENCE: dict[int, str] = {
     DVI_SELECT: "official (MCTRL 660 Pro input switching)",
     BRIGHTNESS_16BIT: "derived (decompiled AddressMapping)",
     RECEIVER_MONITORING: "official (M3 protocol 3.1.1)",
+    RECEIVING_CARD_INFO: "official (M3 protocol 3.9, frames checksum-verified)",
+    RECEIVING_CARD_FIRMWARE: "official (M3 protocol 3.9)",
     RED_GAMMA_TABLE: "derived (decompiled AddressMapping)",
     SCREEN_CONFIG_SPACE: "derived (decompiled AddressMapping)",
     VIDEO_SOURCE_STATE: "derived (decompiled AddressMapping)",

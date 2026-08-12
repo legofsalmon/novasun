@@ -183,3 +183,53 @@ class TestModelProfiles:
         finally:
             server.shutdown()
             server.server_close()
+
+
+class TestReceivingCardEnumeration:
+    """Finding the cards actually present, rather than assuming a count.
+
+    The presence test is reading back the model ID (M3 protocol 3.9): "if the ID
+    can be read back, it means the receiving card is working normally".
+    """
+
+    def test_probe_identifies_a_card(self, controller) -> None:
+        card = controller.probe_receiving_card(port=1, index=0)
+        assert card is not None
+        assert card.model_id == 0x4105
+        assert card.firmware_version == "4.2.0.1"
+        assert card.healthy
+        assert "0x4105" in card.name  # unnamed model IDs show the raw value
+
+    def test_probe_returns_none_for_an_absent_card(self, controller) -> None:
+        assert controller.probe_receiving_card(port=0, index=99) is None
+        assert controller.probe_receiving_card(port=9, index=0) is None
+
+    def test_enumeration_finds_every_card(self, controller, server) -> None:
+        cards = controller.enumerate_receiving_cards(ports=server.port_count)
+        assert len(cards) == server.port_count * server.cards_per_port
+        assert {(c.port, c.index) for c in cards} == {
+            (p, i) for p in range(server.port_count) for i in range(server.cards_per_port)
+        }
+
+    def test_enumeration_stops_after_consecutive_gaps(self, controller, server) -> None:
+        """Two misses end a port, rather than probing all 64 positions."""
+        server.log.clear()
+        controller.enumerate_receiving_cards(ports=1, max_per_port=64)
+        probed = {p.rcv_index for p in server.log if p.io == IO.READ}
+        assert max(probed) == server.cards_per_port + 1  # the two misses, no more
+
+    def test_a_card_reporting_zero_firmware_is_unhealthy(self, controller, server) -> None:
+        server.card(0, 0).write(reg.RECEIVING_CARD_FIRMWARE, b"\x00\x00\x00\x00")
+        card = controller.probe_receiving_card(0, 0)
+        assert card is not None and not card.healthy
+
+    def test_a_card_reporting_model_zero_is_absent(self, controller, server) -> None:
+        server.card(0, 1).write(reg.RECEIVING_CARD_MODEL, b"\x00\x00")
+        assert controller.probe_receiving_card(0, 1) is None
+
+    def test_cards_serialise(self, controller) -> None:
+        import json
+
+        card = controller.probe_receiving_card(0, 0)
+        assert card is not None
+        assert json.dumps(card.to_dict())

@@ -224,6 +224,23 @@ class Processor:
             for index in range(count)
         ]
 
+    def receiving_cards(self, max_per_port: int = 64) -> list[Any]:
+        """Find the receiving cards actually present behind this processor.
+
+        Register bus only: the COEX HTTP API reports cabinets instead, which is
+        the controller's own model of the same hardware and is available through
+        :meth:`monitoring`.
+        """
+        if self.coex is not None:
+            raise NotSupported(
+                "COEX controllers report cabinets over HTTP; "
+                "use monitoring() rather than walking the register bus"
+            )
+        controller = self._require_controller("receiving-card enumeration")
+        return controller.enumerate_receiving_cards(
+            ports=self.profile.port_count, max_per_port=max_per_port
+        )
+
     # --- display ------------------------------------------------------------
 
     def set_display_mode(self, mode: DisplayMode | str) -> None:

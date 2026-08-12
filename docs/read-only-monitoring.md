@@ -263,6 +263,28 @@ unrecognised fields `None` and keeping the raw payload on the snapshot.
 `MonitorSnapshot` folds these into `healthy`, `offline_cabinets`, `hottest`,
 `signal_present` and `display_mode`.
 
+### Receiving cards over the register bus
+
+Receiving cards can be found and identified, and it is a pure read:
+`0x00000000` on device type 1 gives a model ID (non-zero = present and working)
+and a firmware version. **OFFICIAL** — M3 protocol document §3.9, frames
+checksum-verified.
+
+Useful for a monitoring pane: it yields the real cabinet count per port, each
+card's firmware, and a health flag (a card that answers with all-zero firmware
+is not running). Combined with the `0x0A000000` block it gives per-cabinet
+temperature and voltage.
+
+The cost is that it needs a **control session on TCP 5200**, which is the thing
+a read-only consumer should not take. It is a read in protocol terms and an
+intrusion in operational terms. `survey` therefore leaves it behind
+`allow_register_bus`, and the application exposes it as an explicit "scan chain"
+action rather than doing it on a refresh tick — one round trip per chain
+position, so a 16-port processor is hundreds of frames.
+
+On COEX hardware, do not do this: the controller already reports the same
+hardware as cabinets over HTTP, with no session to take.
+
 ### On non-COEX hardware (VX4S, NovaPro UHD Jr)
 
 **No read-only path exists.** There is no HTTP API and no SNMP; monitoring means

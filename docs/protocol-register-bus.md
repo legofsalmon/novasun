@@ -84,6 +84,8 @@ receiving-card display registers use `0xFF` rather than `0x01` for "on".
 
 | Address | Size | Meaning | Source |
 |---|---|---|---|
+| `0x00000000` | 2 | Model ID — **non-zero means a card is present and working** | M3 doc §3.9 |
+| `0x00000002` | 4 | Firmware version, e.g. `04 02 00 01` → 4.2.0.1 (all zeros = not running) | M3 doc §3.9 |
 | `0x02000000` | 1 | Gamma value | decompiled |
 | `0x02000001` | 1 | Global brightness, `0`–`0xFF` (ratio = value / `0xFF`) | COEX doc, M3 doc §3.3 |
 | `0x02000001` | 5 | Global + R + G + B + virtual-R in one write | M3 doc §3.3 |
@@ -96,6 +98,21 @@ receiving-card display registers use `0xFF` rather than `0x01` for "on".
 | `0x02000102` | 1 | Freeze — `0x00` running, `0xFF` frozen ("lock mode") | COEX doc §3.2.4 |
 | `0x05000000` | 512 | Red gamma table (green at `+0x200`, blue at `+0x400`) | decompiled |
 | `0x0A000000` | 256 | Monitoring block — temperature, humidity, voltage, fans, cables | M3 doc §3.1.1 |
+
+**There is no receiving-card enumeration command.** The M3 document is explicit
+about the method: "just try reading the receiving card model ID. If the ID can
+be read back, it means the receiving card is working normally." So finding the
+chain means walking `(port, index)` and reading two bytes at address 0 — a card
+answers, an empty position returns `ack = TIMEOUT`.
+
+That is one round trip per position, so walk until a couple of consecutive gaps
+rather than probing all 64 addresses on all 16 ports.
+`Controller.enumerate_receiving_cards` does this.
+
+The model IDs live in a 0x41xx range (`0x4105` in the document's own example).
+The mapping from ID to product name is **not documented anywhere available**,
+and NovaLCT's decompiled table has only a generic `Scanner = 0x4101` entry, so
+`ReceivingCard.name` reports the raw ID rather than guessing a product.
 
 Test-pattern values: `0x00` normal, `0x02` red, `0x03` green, `0x04` blue,
 `0x05` white, `0x06` horizontal line, `0x07` vertical line, `0x08` diagonal,

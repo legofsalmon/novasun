@@ -249,11 +249,112 @@ class Controller:
 
     # --- monitoring ---------------------------------------------------------
 
+    def probe_receiving_card(self, port: int, index: int) -> "ReceivingCard | None":
+        """Identify the receiving card at one chain position, if there is one.
+
+        Per the M3 protocol document: reading the model ID back at all is the
+        presence and health test. A zero model ID, a timeout ack, or silence all
+        mean "no working card here".
+        """
+        target = Target.receiving_card(port=port, index=index)
+        try:
+            raw = self.read(reg.RECEIVING_CARD_INFO, 6, target)
+        except (DeviceError, ProtocolError, TimeoutError):
+            return None
+        if len(raw) < 6:
+            return None
+        model = int.from_bytes(raw[0:2], "little")
+        if model == 0:
+            return None
+        return ReceivingCard(
+            port=port,
+            index=index,
+            model_id=model,
+            firmware=tuple(raw[2:6]),
+        )
+
+    def enumerate_receiving_cards(
+        self,
+        ports: int,
+        max_per_port: int = 64,
+        stop_after_misses: int = 2,
+    ) -> list["ReceivingCard"]:
+        """Walk every port, finding the cards actually present.
+
+        Cards are numbered from 0 along each port, so the walk stops after
+        ``stop_after_misses`` consecutive gaps rather than probing all 64
+        positions — an absent card costs a round trip, and a 16-port processor
+        would otherwise be 1024 of them.
+
+        A gap in the middle of a chain is real (a dead card still breaks the
+        run), so raise ``stop_after_misses`` if you are hunting for one.
+        """
+        found: list[ReceivingCard] = []
+        for port in range(ports):
+            misses = 0
+            for index in range(max_per_port):
+                card = self.probe_receiving_card(port, index)
+                if card is None:
+                    misses += 1
+                    if misses >= stop_after_misses:
+                        break
+                    continue
+                misses = 0
+                found.append(card)
+        return found
+
     def read_receiver_monitoring(self, port: int, index: int) -> "ReceiverStatus":
         raw = self.read(
             reg.RECEIVER_MONITORING, 0x100, Target.receiving_card(port=port, index=index)
         )
         return ReceiverStatus.parse(raw)
+
+
+#: Receiving-card model IDs we can put a name to. The register is generic --
+#: every Nova receiving card answers it -- but the ID space is not documented,
+#: so most cards report a number we can show and cannot label. NovaLCT's
+#: decompiled table contains only the generic `Scanner` entry.
+RECEIVING_CARD_NAMES: dict[int, str] = {
+    0x4101: "Scanner (generic)",
+}
+
+
+@dataclass
+class ReceivingCard:
+    """A receiving card found on a port.
+
+    ``model_id`` is whatever the card reports; the 0x41xx range is what has been
+    seen, but the mapping from ID to product name is undocumented, so
+    :attr:`name` falls back to the raw value rather than guessing.
+    """
+
+    port: int
+    index: int
+    model_id: int
+    firmware: tuple[int, ...] = ()
+
+    @property
+    def name(self) -> str:
+        return RECEIVING_CARD_NAMES.get(self.model_id, f"model 0x{self.model_id:04x}")
+
+    @property
+    def firmware_version(self) -> str:
+        return ".".join(str(part) for part in self.firmware) if self.firmware else ""
+
+    @property
+    def healthy(self) -> bool:
+        """A card that answers but reports all-zero firmware is not running."""
+        return self.model_id != 0 and any(self.firmware)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "port": self.port,
+            "index": self.index,
+            "model_id": self.model_id,
+            "name": self.name,
+            "firmware": self.firmware_version,
+            "healthy": self.healthy,
+        }
 
 
 @dataclass
@@ -283,6 +384,7 @@ class ReceiverStatus:
 __all__ = [
     "Controller",
     "DeviceInfo",
+    "ReceivingCard",
     "ReceiverStatus",
     "Target",
     "DeviceType",
