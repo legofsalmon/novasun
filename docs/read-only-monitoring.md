@@ -387,6 +387,30 @@ insulate consumers from that.
 
 ---
 
+---
+
+## History and alerts
+
+The application keeps bounded per-device series (temperature, cabinets online,
+reachability) and raises alerts from them. A consumer that wants the same
+behaviour rather than the same code can take the rules, which are the part worth
+copying:
+
+* **Dwell before declaring an outage.** A device must miss several consecutive
+  polls, because one dropped poll on a busy network is not a failure. Default 2.
+* **Hysteresis on thresholds.** Alerts clear at a lower value than they fire
+  (default: warn at 45 °C, clear at 42 °C). Equal thresholds make a reading
+  sitting on the line flap, which trains operators to ignore the pane.
+* **Acknowledgement silences without dismissing.** An acknowledged alert drops
+  out of "worst severity" but stays listed until the condition actually clears,
+  and an escalation revokes the acknowledgement.
+* **Clearing is an event.** Without "came back at 19:44", a log of alerts reads
+  as permanently on fire and stops being read.
+
+These are in `novasun.app.history`, which is pure data structures with no I/O:
+feed it device-state dicts and it returns events. It needs no connection of its
+own, so it is usable from a read-only consumer that polls by other means.
+
 ## Summary for crewbox
 
 | Question | Answer |

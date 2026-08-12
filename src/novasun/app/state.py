@@ -39,6 +39,7 @@ from ..devices import DeviceProfile, Family, identify, unknown_profile
 from ..processor import CapabilityUnknown, NotSupported, Processor
 from ..registers import DisplayMode, TestPattern
 from . import config as config_module
+from .history import AlertEngine, Thresholds
 from .screens import Screen, ScreenMember, aggregate
 
 MAX_BACKOFF = 60.0
@@ -339,7 +340,8 @@ class Application:
         self.timeout = timeout
         self.devices: dict[str, Device] = {}
         self.screens: dict[str, Screen] = {}
-        self.history: list[ActionRecord] = []
+        self.actions: list[ActionRecord] = []
+        self.alerts = AlertEngine()
         self.config_path = config_path
         self.autosave = autosave
         self.config_error: str | None = None
@@ -362,6 +364,7 @@ class Application:
             config_path=config.path,
         )
         app.config_error = config.load_error
+        app.alerts.thresholds = config.thresholds
         for screen in config.screens:
             app.screens[screen.identifier] = screen
         for entry in config.devices:
@@ -384,6 +387,7 @@ class Application:
                     for device in self.devices.values()
                 ],
                 screens=list(self.screens.values()),
+                thresholds=self.alerts.thresholds,
                 path=self.config_path,
             )
 
@@ -463,7 +467,7 @@ class Application:
                 error="no such screen",
             )
             with self._lock:
-                self.history.append(record)
+                self.actions.append(record)
             return [record]
 
         records: list[ActionRecord] = []
@@ -480,10 +484,27 @@ class Application:
         device_states = {
             address: device.state.to_dict() for address, device in self.devices.items()
         }
-        return [
-            aggregate(screen, device_states).to_dict()
-            for screen in sorted(self.screens.values(), key=lambda s: s.name.lower())
-        ]
+        states = []
+        for screen in sorted(self.screens.values(), key=lambda s: s.name.lower()):
+            state = aggregate(screen, device_states).to_dict()
+            # An alert on any member is an alert on the screen: the operator
+            # cares that the wall has a problem, not which box reported it.
+            member_alerts = [
+                alert.to_dict()
+                for address in screen.addresses
+                for alert in self.alerts.active(address)
+            ]
+            state["alerts"] = member_alerts
+            state["worst_severity"] = (
+                max(
+                    (a["severity"] for a in member_alerts),
+                    key=lambda s: {"info": 0, "warning": 1, "critical": 2}[s],
+                )
+                if member_alerts
+                else None
+            )
+            states.append(state)
+        return states
 
     # --- membership ---------------------------------------------------------
 
@@ -504,6 +525,7 @@ class Application:
                 device = Device(address, timeout=self.timeout, **ports)
                 self.devices[address] = device
         device.refresh(force=True)
+        self.alerts.observe(device.state.to_dict())
         self._autosave()
         self._notify()
         return device
@@ -514,6 +536,7 @@ class Application:
         if device is None:
             return False
         device.close()
+        self.alerts.forget(address)
         self._autosave()
         self._notify()
         return True
@@ -546,8 +569,8 @@ class Application:
         else:
             record = device.execute(action, **arguments)
         with self._lock:
-            self.history.append(record)
-            del self.history[:-200]
+            self.actions.append(record)
+            del self.actions[:-200]
         self._notify()
         return record
 
@@ -556,7 +579,33 @@ class Application:
     def refresh_all(self) -> None:
         for device in list(self.devices.values()):
             device.refresh()
+        self.evaluate()
         self._notify()
+
+    def evaluate(self) -> list[Any]:
+        """Fold the current device states into history and alerts."""
+        return self.alerts.observe_all(
+            device.state.to_dict() for device in list(self.devices.values())
+        )
+
+    def acknowledge(self, key: str) -> bool:
+        acknowledged = self.alerts.acknowledge(key)
+        if acknowledged:
+            self._notify()
+        return acknowledged
+
+    def set_thresholds(self, **changes: Any) -> Thresholds:
+        """Update alert thresholds, validate them, and persist."""
+        current = self.alerts.thresholds
+        candidate = Thresholds(
+            **{**current.to_dict(), **{k: v for k, v in changes.items()
+                                       if k in current.to_dict()}}
+        )
+        candidate.validate()
+        self.alerts.thresholds = candidate
+        self._autosave()
+        self._notify()
+        return candidate
 
     def start(self) -> None:
         if self._thread is not None:
@@ -588,15 +637,21 @@ class Application:
     # --- rendering ----------------------------------------------------------
 
     def snapshot(self) -> dict[str, Any]:
+        alerts = self.alerts.to_dict()
         with self._lock:
             devices = [device.state.to_dict() for device in self.devices.values()]
-            history = [record.to_dict() for record in self.history[-25:]]
+            actions = [record.to_dict() for record in self.actions[-25:]]
         return {
             "timestamp": time.time(),
             "refresh_interval": self.refresh_interval,
             "devices": sorted(devices, key=lambda entry: entry["address"]),
             "screens": self.screen_states(),
-            "history": list(reversed(history)),
+            "actions": list(reversed(actions)),
+            "alerts": alerts["alerts"],
+            "events": alerts["events"],
+            "worst_severity": alerts["worst_severity"],
+            "thresholds": alerts["thresholds"],
+            "metrics": alerts["metrics"],
             "destructive_actions": sorted(DESTRUCTIVE),
             "config_path": str(self.config_path) if self.config_path else None,
             "config_error": self.config_error,

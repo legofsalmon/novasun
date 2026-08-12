@@ -155,7 +155,7 @@ class TestActions:
         device = add_register_device(app, vx4s)
         app.execute(device.address, "brightness", percent=40)
         app.execute(device.address, "select_input", label="NOPE")
-        history = app.snapshot()["history"]
+        history = app.snapshot()["actions"]
         assert history[0]["action"] == "select_input" and not history[0]["ok"]
         assert history[1]["action"] == "brightness" and history[1]["ok"]
 
@@ -297,7 +297,7 @@ class TestBlackoutSafety:
         assert vx4s.sender.read(0x0220_0050, 1) == b"\x02"
         app.execute(device.address, "blackout", enabled=False)
         assert vx4s.sender.read(0x0220_0050, 1) == b"\x00"
-        actions = [record["action"] for record in app.snapshot()["history"]]
+        actions = [record["action"] for record in app.snapshot()["actions"]]
         assert actions.count("blackout") == 2
 
     def test_receiving_card_fallback_for_sending_cards(self, app) -> None:
@@ -421,3 +421,74 @@ class TestScreenHttp:
         server, _app, _vx4s = service
         assert self.call(server, "/api/screens/nope", "DELETE")[0] == 404
         assert self.call(server, "/api/screens/nope", "POST", {"name": "x"})[0] == 404
+
+
+def take_offline(app, device, server) -> None:
+    """Make a simulated device genuinely unreachable.
+
+    `shutdown()` only stops the listener; the established control connection
+    stays up and would keep answering. Closing the client side too forces the
+    next refresh to reconnect, which is what fails.
+    """
+    server.shutdown()
+    server.server_close()
+    device.close()
+    app.refresh_all()
+
+
+class TestAlertsInTheApplication:
+    def test_a_device_going_away_raises_then_clears(self, app, vx4s) -> None:
+        device = add_register_device(app, vx4s)
+        app.alerts.thresholds.offline_ticks = 1
+        assert not app.snapshot()["alerts"]
+
+        take_offline(app, device, vx4s)
+        snapshot = app.snapshot()
+        assert snapshot["worst_severity"] == "critical"
+        assert snapshot["alerts"][0]["address"] == device.address
+        assert any("unreachable" in e["message"] for e in snapshot["events"])
+
+    def test_temperature_series_accumulates(self, app, vx4s) -> None:
+        add_register_device(app, vx4s)
+        for _ in range(3):
+            app.refresh_all()
+        metrics = app.snapshot()["metrics"][next(iter(app.devices))]
+        assert metrics["temperature_c"]["count"] >= 3
+
+    def test_acknowledge_over_the_state_layer(self, app, vx4s) -> None:
+        device = add_register_device(app, vx4s)
+        app.alerts.thresholds.offline_ticks = 1
+        take_offline(app, device, vx4s)
+
+        key = app.snapshot()["alerts"][0]["key"]
+        assert app.acknowledge(key)
+        snapshot = app.snapshot()
+        assert snapshot["alerts"][0]["acknowledged"]
+        assert snapshot["worst_severity"] is None  # silenced, still listed
+
+    def test_removing_a_device_removes_its_alerts(self, app, vx4s) -> None:
+        device = add_register_device(app, vx4s)
+        app.alerts.thresholds.offline_ticks = 1
+        take_offline(app, device, vx4s)
+        assert app.snapshot()["alerts"]
+
+        app.remove(device.address)
+        assert app.snapshot()["alerts"] == []
+
+    def test_thresholds_are_validated_before_being_applied(self, app) -> None:
+        with pytest.raises(ValueError):
+            app.set_thresholds(temperature_clear=99.0)
+        # The bad value was not kept.
+        assert app.alerts.thresholds.temperature_clear == 42.0
+
+    def test_screen_surfaces_member_alerts(self, app, vx4s) -> None:
+        from novasun.app.screens import ScreenMember
+
+        device = add_register_device(app, vx4s)
+        app.add_screen("Wall", [ScreenMember(device.address, ports=[0])])
+        app.alerts.thresholds.offline_ticks = 1
+        take_offline(app, device, vx4s)
+
+        screen = app.snapshot()["screens"][0]
+        assert screen["worst_severity"] == "critical"
+        assert screen["alerts"][0]["address"] == device.address

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .history import Thresholds
 from .screens import Screen
 
 CONFIG_VERSION = 1
@@ -65,6 +66,7 @@ class Config:
     devices: list[DeviceEntry] = field(default_factory=list)
     screens: list[Screen] = field(default_factory=list)
     refresh_interval: float = 10.0
+    thresholds: Thresholds = field(default_factory=Thresholds)
     path: Path | None = None
     load_error: str | None = None
     """Set when the file on disk could not be read; the app surfaces it."""
@@ -75,6 +77,7 @@ class Config:
             "refresh_interval": self.refresh_interval,
             "devices": [device.to_dict() for device in self.devices],
             "screens": [screen.to_dict() for screen in self.screens],
+            "thresholds": self.thresholds.to_dict(),
         }
 
     @classmethod
@@ -91,6 +94,7 @@ class Config:
             refresh_interval=float(raw.get("refresh_interval") or 10.0),
             devices=[DeviceEntry.from_dict(d) for d in raw.get("devices", [])],
             screens=[Screen.from_dict(s) for s in raw.get("screens", [])],
+            thresholds=Thresholds.from_dict(raw.get("thresholds") or {}),
             path=path,
         )
 

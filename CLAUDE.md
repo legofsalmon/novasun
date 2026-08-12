@@ -62,7 +62,7 @@ byte at a live screen. Preserve that behaviour when extending the device table.
 
 ```
 src/novasun/
-  app/           application layer: multi-device state, HTTP service, browser UI
+  app/           application layer: screens, state, history/alerts, HTTP, UI
   protocol.py    frame codec: encode, decode, checksum, stream framing
   registers.py   register addresses with provenance
   devices.py     model IDs, per-model inputs/outputs, capabilities
@@ -107,6 +107,12 @@ wall cannot be discovered, so it is entered by a human and persisted. A screen
 action addresses only its members' own ports — a partial screen blacks out via
 the receiving cards rather than the processor register, which would blank the
 whole output including a screen sharing that processor.
+
+**Alerting exists to be trusted, so restraint is the feature.** Dwell before
+calling a device offline, hysteresis so a threshold reading cannot flap,
+acknowledgement that silences without dismissing, and clearing events so the log
+is a history rather than a permanent fire. `Thresholds.validate` rejects
+settings that would reintroduce flapping. Do not "simplify" these away.
 
 **Config is written atomically and a corrupt file is moved aside, never
 overwritten.** Losing a venue layout to a stray character is worse than starting

@@ -60,6 +60,15 @@ app.execute_screen("main-wall", "brightness", percent=60)
 print(app.snapshot()["screens"])
 ```
 
+It keeps **history and raises alerts**: temperature series per device with a
+trend, and rules for devices going away, cabinets dropping and temperature
+thresholds. The engineering is in not crying wolf — a device must miss several
+consecutive refreshes before it counts as offline, temperature alerts clear at a
+lower value than they fire so a reading on the threshold cannot flap, and an
+operator can acknowledge an alert to silence it without dismissing it. Clearing
+is an event too, so the log reads as a history rather than as permanently on
+fire.
+
 Nothing that writes flash, resets to factory defaults or touches program space
 is reachable from this layer. Those registers exist and `Controller` can reach
 them, but they do not belong beside a brightness slider.
@@ -72,7 +81,7 @@ simulator so the application layer can be built without hardware.
 
 ```
 src/novasun/
-  app/           the application: multi-device state, HTTP service, browser UI
+  app/           the application: screens, state, history and alerts, HTTP, UI
   protocol.py    frame codec — encode, decode, checksum, stream framing
   registers.py   register addresses, each tagged with its provenance
   transport.py   TCP and serial byte transports, stream reassembly
@@ -213,7 +222,7 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-251 tests. The protocol suite replays 26 frames printed in NovaStar's own
+286 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The

@@ -66,6 +66,17 @@
   .log div { padding: 2px 0; border-bottom: 1px solid #23262d; }
   .log .fail { color: var(--bad); }
   .empty { color: var(--dim); }
+  .chip { padding: 4px 10px; border-radius: 20px; font-size: 12.5px; font-weight: 600; }
+  .chip.critical { background: var(--bad); color: #fff; }
+  .chip.warning { background: var(--warn); color: #201a06; }
+  .alert { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px;
+           border-radius: 8px; margin-bottom: 6px; border: 1px solid var(--edge); }
+  .alert.critical { border-color: #5a2a2e; background: #2a1c1e; }
+  .alert.warning { border-color: #5c4d21; background: #2a2617; }
+  .alert.acked { opacity: .55; }
+  .alert .who { font-family: ui-monospace, monospace; font-size: 12px; color: var(--dim); }
+  .alert .grow { flex: 1; }
+  .spark { display: block; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -75,6 +86,7 @@
   <button id="add">Add</button>
   <button id="discover">Discover</button>
   <span class="grow"></span>
+  <span id="alertchip"></span>
   <span id="tick" class="empty"></span>
   <button id="refresh">Refresh</button>
 </header>
@@ -90,11 +102,15 @@
     <h2 style="margin-top:22px">Devices</h2>
     <div id="devices" class="device-list"></div>
   </section>
-  <section class="card" id="detail"><p class="empty">No device selected.</p></section>
+  <section>
+    <div class="card" id="alerts" style="margin-bottom:18px; display:none"></div>
+    <div class="card" id="detail"><p class="empty">Select a screen or a device.</p></div>
+  </section>
 </main>
 
 <script>
-let state = { devices: [], screens: [], history: [], destructive_actions: [] };
+let state = { devices: [], screens: [], actions: [], alerts: [], events: [],
+              destructive_actions: [] };
 let selected = null;          // device address
 let selectedScreen = null;
 let busy = false;
@@ -351,8 +367,18 @@ function renderDetail() {
     html += '</div>';
   }
 
+  const metrics = (state.metrics || {})[entry.address] || {};
+  const temp = metrics.temperature_c;
+  if (temp && temp.count > 1) {
+    const arrow = temp.trend > 0.5 ? '&uarr;' : temp.trend < -0.5 ? '&darr;' : '&rarr;';
+    html += '<h3>Temperature</h3>' +
+      `<div class="row"><strong>${temp.latest} &deg;C</strong> ` +
+      `<span class="empty">${arrow} ${temp.trend > 0 ? '+' : ''}${temp.trend} over ` +
+      `${temp.count} samples &middot; min ${temp.min} max ${temp.max}</span></div>`;
+  }
+
   html += '<h3>Recent actions</h3><div class="log">';
-  const mine = state.history.filter((r) => r.address === entry.address);
+  const mine = state.actions.filter((r) => r.address === entry.address);
   html += mine.length
     ? mine.map((r) => `<div class="${r.ok ? '' : 'fail'}">${new Date(r.timestamp * 1000)
         .toLocaleTimeString()} ${r.action} ${r.detail || ''} ${r.ok ? '' : '— ' + r.error}</div>`).join('')
@@ -386,7 +412,68 @@ function renderDetail() {
   }
 }
 
+function renderAlerts() {
+  const panel = $('alerts');
+  const alerts = state.alerts || [];
+  const events = state.events || [];
+  const chip = $('alertchip');
+  chip.className = state.worst_severity ? `chip ${state.worst_severity}` : '';
+  chip.textContent = state.worst_severity
+    ? `${alerts.filter((a) => !a.acknowledged).length} ${state.worst_severity}` : '';
+
+  if (!alerts.length && !events.length) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  let html = '<h2>Alerts</h2>';
+  html += alerts.length ? alerts.map((a) =>
+    `<div class="alert ${a.severity} ${a.acknowledged ? 'acked' : ''}">` +
+    `<strong>${a.kind}</strong><span class="grow">${a.message}` +
+    `<div class="who">${a.address} &middot; ${formatAge(a.age)}</div></span>` +
+    (a.acknowledged ? '<span class="empty">acked</span>'
+                    : `<button data-ack="${a.key}">Ack</button>`) +
+    '</div>').join('')
+    : '<p class="empty">Nothing active.</p>';
+
+  html += '<h3>Recent events</h3><div class="log">' +
+    (events.length ? events.map((e) =>
+      `<div class="${e.severity === 'critical' ? 'fail' : ''}">` +
+      `${new Date(e.timestamp * 1000).toLocaleTimeString()} ` +
+      `${e.address} ${e.kind} &mdash; ${e.message}</div>`).join('')
+      : '<div class="empty">None yet.</div>') + '</div>';
+  panel.innerHTML = html;
+
+  panel.querySelectorAll('[data-ack]').forEach((b) => {
+    b.onclick = async () => {
+      await api('/api/alerts/acknowledge', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: b.dataset.ack }),
+      });
+      render();
+    };
+  });
+}
+
+function formatAge(seconds) {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function sparkline(samples, width = 180, height = 28) {
+  if (!samples || samples.length < 2) return '';
+  const values = samples.map((s) => s.v);
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = (max - min) || 1;
+  const step = width / (values.length - 1);
+  const points = values.map((v, i) =>
+    `${(i * step).toFixed(1)},${(height - ((v - min) / span) * height).toFixed(1)}`);
+  return `<svg class="spark" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<polyline fill="none" stroke="var(--accent)" stroke-width="1.5" points="${points.join(' ')}"/>` +
+    `</svg>`;
+}
+
 function render() {
+  renderAlerts();
   renderScreenList();
   renderDeviceList();
   renderDetail();

@@ -20,6 +20,8 @@ Endpoints:
 ``/api/screens/<id>``        POST    update a screen's name, note or members
 ``/api/screens/<id>``        DELETE  forget a screen
 ``/api/screens/<id>/action`` POST    run an action across the whole screen
+``/api/alerts/acknowledge``  POST    ``{"key": "..."}`` silence without dismissing
+``/api/thresholds``          POST    update alert thresholds
 ===========================  ======  ==============================================
 
 **Binds to localhost by default.** This service holds control sessions to live
@@ -141,6 +143,21 @@ class _Handler(BaseHTTPRequestHandler):
             if screen is None:
                 return self._send({"error": "no such screen"}, 404)
             return self._send({"screen": screen.to_dict(), "state": self.app.snapshot()})
+
+        if path == "/api/alerts/acknowledge":
+            key = str(body.get("key", ""))
+            if not self.app.acknowledge(key):
+                return self._send({"error": "no such alert"}, 404)
+            return self._send(self.app.snapshot())
+
+        if path == "/api/thresholds":
+            try:
+                thresholds = self.app.set_thresholds(**body)
+            except (ValueError, TypeError) as exc:
+                return self._send({"error": str(exc)}, 400)
+            return self._send(
+                {"thresholds": thresholds.to_dict(), "state": self.app.snapshot()}
+            )
 
         if path == "/api/action":
             address = str(body.pop("address", ""))
