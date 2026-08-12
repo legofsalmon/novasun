@@ -62,6 +62,7 @@ byte at a live screen. Preserve that behaviour when extending the device table.
 
 ```
 src/novasun/
+  app/           application layer: multi-device state, HTTP service, browser UI
   protocol.py    frame codec: encode, decode, checksum, stream framing
   registers.py   register addresses with provenance
   devices.py     model IDs, per-model inputs/outputs, capabilities
@@ -93,6 +94,27 @@ untestable, and an untested protocol claim is a guess with extra steps.
 The register-bus simulator models a real chain (ports, per-card registers,
 `ack=TIMEOUT` for absent cards, silence for absent chain positions) precisely so
 that addressing mistakes fail here rather than on site. Do not flatten it.
+
+## The application layer
+
+`app/state.py` holds the model, `app/server.py` only exposes it. Keep that
+split: a different front end should be able to import the state layer without
+starting a web server.
+
+Rules it enforces, worth preserving:
+
+- **Reachability is a state, never an exception.** `unreachable` and `in-use`
+  are normal conditions with backoff, not error dialogs.
+- **Capabilities drive the interface.** A control is offered only if the
+  connected model supports it; unestablished encodings are shown and disabled
+  with the reason, never guessed.
+- **Destructive actions are labelled, not blocked.** `DESTRUCTIVE` tells the
+  interface what to confirm. Blackout and freeze are legitimate and also ruin a
+  show.
+- **No route to flash writes, factory reset or program space.** `_dispatch`
+  is an allowlist; there is a test asserting those actions are rejected.
+- **The service binds to localhost** and has no authentication. It holds
+  control sessions to live screens; do not change the default.
 
 ## Things that bite
 

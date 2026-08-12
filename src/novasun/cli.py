@@ -1,5 +1,6 @@
 """Command line front end -- a probe tool, and a worked example of the API.
 
+    python -m novasun serve 192.168.1.40      # the application and its UI
     python -m novasun discover
     python -m novasun info 192.168.1.40
     python -m novasun status 192.168.1.40
@@ -111,6 +112,20 @@ def cmd_outputs(args: argparse.Namespace) -> int:
         for output in detail["other"]:
             suffix = " (loop-through)" if output["loop_through"] else ""
             print(f"  {output['count']}x {output['label']}{suffix}")
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the application: state, HTTP API and browser UI."""
+    from .app.server import serve
+
+    serve(
+        hosts=args.host or None,
+        host=args.bind,
+        port=args.port,
+        refresh_interval=args.interval,
+        discover=args.discover,
+    )
     return 0
 
 
@@ -486,6 +501,14 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--cards-per-port", type=int, default=2)
     simulate.add_argument("--latency", type=float, default=0.0)
     simulate.set_defaults(func=cmd_simulate)
+
+    serve_parser = sub.add_parser("serve", help="run the application and its browser UI")
+    serve_parser.add_argument("host", nargs="*", help="device addresses to load at start")
+    serve_parser.add_argument("--bind", default="127.0.0.1", help="interface to listen on")
+    serve_parser.add_argument("--port", type=int, default=8770)
+    serve_parser.add_argument("--interval", type=float, default=10.0, help="refresh seconds")
+    serve_parser.add_argument("--discover", action="store_true", help="broadcast at start")
+    serve_parser.set_defaults(func=cmd_serve)
 
     survey_parser = sub.add_parser(
         "survey", help="read-only survey of the processors on this network"

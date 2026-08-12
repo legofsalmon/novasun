@@ -23,6 +23,38 @@ work is.
 | [prior-art.md](docs/prior-art.md) | Existing libraries and official interfaces, with licensing |
 | [sources.md](docs/sources.md) | Every document and repository this was built from |
 
+## The application
+
+```bash
+pip install -e .
+novasun serve 192.168.1.40        # then open http://127.0.0.1:8770
+novasun serve --discover          # or let it find them
+```
+
+A local service holding connections to several processors, with a browser UI
+over it. Capability-aware: a control appears only if the connected model
+supports it, inputs whose select code is unestablished are shown greyed with
+the reason, and blackout / freeze / test-pattern are confirmed before they are
+sent. Unreachable is a state with a retry, not an error dialog — including
+`in-use`, which is what you see when NovaLCT is already holding the session.
+
+State lives in `novasun.app.state` and the HTTP service only exposes it, so a
+different front end (Electron, Tauri, native) can import the state layer
+directly and skip the web server:
+
+```python
+from novasun.app import Application
+
+with Application() as app:
+    app.add("192.168.1.40")
+    app.execute("192.168.1.40", "brightness", percent=60)
+    print(app.snapshot())
+```
+
+Nothing that writes flash, resets to factory defaults or touches program space
+is reachable from this layer. Those registers exist and `Controller` can reach
+them, but they do not belong beside a brightness slider.
+
 ## The code
 
 A dependency-free Python implementation of the foundation layer: frame codec,
@@ -31,6 +63,7 @@ simulator so the application layer can be built without hardware.
 
 ```
 src/novasun/
+  app/           the application: multi-device state, HTTP service, browser UI
   protocol.py    frame codec — encode, decode, checksum, stream framing
   registers.py   register addresses, each tagged with its provenance
   transport.py   TCP and serial byte transports, stream reassembly
@@ -171,7 +204,7 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-182 tests. The protocol suite replays 26 frames printed in NovaStar's own
+210 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The

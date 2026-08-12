@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>novasun</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2027; --edge: #2c3038; --ink: #e8eaed;
+    --dim: #9aa1ab; --accent: #5aa9ff; --ok: #4ec97a;
+    --warn: #f0b429; --bad: #f2545b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--edge); background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
+  }
+  h1 { font-size: 17px; margin: 0 12px 0 0; font-weight: 650; letter-spacing: .2px; }
+  .grow { flex: 1; }
+  button, input {
+    font: inherit; color: var(--ink); background: #262a32;
+    border: 1px solid var(--edge); border-radius: 7px; padding: 7px 12px;
+  }
+  button { cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.danger { border-color: #5a2a2e; }
+  button.danger.active { background: var(--bad); border-color: var(--bad); color: #fff; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08121f; font-weight: 600; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 18px; padding: 18px 20px; align-items: start; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--edge); border-radius: 11px; padding: 16px; }
+  .device-list { display: flex; flex-direction: column; gap: 8px; }
+  .device {
+    text-align: left; width: 100%; padding: 11px 13px; border-radius: 9px; line-height: 1.35;
+  }
+  .device.selected { border-color: var(--accent); background: #22303f; }
+  .device .addr { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--dim); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+  .online .dot { background: var(--ok); }
+  .unreachable .dot { background: var(--bad); }
+  .in-use .dot { background: var(--warn); }
+  .unknown .dot { background: var(--dim); }
+  h2 { font-size: 15px; margin: 0 0 12px; font-weight: 650; }
+  h3 { font-size: 12px; margin: 20px 0 9px; text-transform: uppercase;
+       letter-spacing: .07em; color: var(--dim); font-weight: 600; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 5px 16px; font-size: 14px; }
+  .facts dt { color: var(--dim); }
+  .facts dd { margin: 0; font-family: ui-monospace, monospace; font-size: 13px; }
+  .row { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  .inputs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .inputs button { min-width: 92px; }
+  .inputs button .sub { display: block; font-size: 11px; color: var(--dim); }
+  input[type=range] { flex: 1; min-width: 170px; accent-color: var(--accent); }
+  .banner { padding: 9px 12px; border-radius: 8px; font-size: 13.5px; margin-bottom: 12px; }
+  .banner.bad { background: #3a1f22; border: 1px solid #5a2a2e; }
+  .banner.warn { background: #3a3320; border: 1px solid #5c4d21; }
+  .log { font-size: 12.5px; font-family: ui-monospace, monospace; color: var(--dim);
+         max-height: 190px; overflow: auto; }
+  .log div { padding: 2px 0; border-bottom: 1px solid #23262d; }
+  .log .fail { color: var(--bad); }
+  .empty { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>novasun</h1>
+  <input id="address" placeholder="192.168.1.40" size="15">
+  <button id="add">Add</button>
+  <button id="discover">Discover</button>
+  <span class="grow"></span>
+  <span id="tick" class="empty"></span>
+  <button id="refresh">Refresh</button>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Devices</h2>
+    <div id="devices" class="device-list"></div>
+  </section>
+  <section class="card" id="detail"><p class="empty">No device selected.</p></section>
+</main>
+
+<script>
+let state = { devices: [], history: [], destructive_actions: [] };
+let selected = null;
+let busy = false;
+
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const payload = await response.json().catch(() => ({}));
+  if (payload.state) state = payload.state;
+  else if (payload.devices) state = payload;
+  return { ok: response.ok, payload };
+}
+
+async function load() {
+  const { payload } = await api('/api/state');
+  if (payload.devices) state = payload;
+  render();
+}
+
+async function act(address, action, args, label) {
+  if (state.destructive_actions.includes(action)) {
+    if (!confirm(`${label || action} on ${address}?\n\nThis changes what a live screen shows.`)) return;
+  }
+  busy = true; render();
+  const { payload } = await api('/api/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, action, ...args }),
+  });
+  busy = false;
+  if (payload.result && !payload.result.ok) alert(payload.result.error || 'failed');
+  render();
+}
+
+function device(address) { return state.devices.find((d) => d.address === address); }
+
+function renderDeviceList() {
+  const list = $('devices');
+  list.innerHTML = '';
+  if (!state.devices.length) {
+    list.innerHTML = '<p class="empty">None yet. Add an address or discover.</p>';
+    return;
+  }
+  for (const entry of state.devices) {
+    const button = document.createElement('button');
+    button.className = `device ${entry.reachability}` + (entry.address === selected ? ' selected' : '');
+    button.innerHTML =
+      `<span class="dot"></span><strong>${entry.model || 'unknown'}</strong>` +
+      `<div class="addr">${entry.address} &middot; ${entry.reachability}</div>`;
+    button.onclick = () => { selected = entry.address; render(); };
+    list.appendChild(button);
+  }
+}
+
+function fact(label, value) {
+  return value === null || value === undefined || value === '' ? '' :
+    `<dt>${label}</dt><dd>${value}</dd>`;
+}
+
+function renderDetail() {
+  const panel = $('detail');
+  const entry = device(selected);
+  if (!entry) { panel.innerHTML = '<p class="empty">No device selected.</p>'; return; }
+
+  const caps = entry.capabilities || {};
+  const status = entry.status || {};
+  let html = `<h2>${entry.model || 'Unknown device'} <span class="empty">${entry.address}</span></h2>`;
+
+  if (entry.reachability !== 'online') {
+    const kind = entry.reachability === 'in-use' ? 'warn' : 'bad';
+    const note = entry.reachability === 'in-use'
+      ? 'The control session was refused. NovaLCT or VMP is probably connected.'
+      : (entry.last_error || 'Not reachable.');
+    html += `<div class="banner ${kind}"><strong>${entry.reachability}</strong> &mdash; ${note}</div>`;
+  }
+
+  html += '<dl class="facts">' +
+    fact('Family', entry.family) +
+    fact('Control', entry.control_path) +
+    fact('Name', entry.name) +
+    fact('Serial', entry.serial) +
+    fact('Outputs', entry.ethernet_ports === null ? null :
+      `${entry.ethernet_ports}&times; ethernet` + (entry.fibre_ports ? ` + ${entry.fibre_ports}&times; fibre` : '')) +
+    fact('Temperature', status.temperature_c === undefined ? null : `${status.temperature_c} &deg;C`) +
+    fact('Cabinets', status.cabinets_total === undefined ? null :
+      `${status.cabinets_online}/${status.cabinets_total} online`) +
+    '</dl>';
+
+  const online = entry.reachability === 'online' && !busy;
+
+  if (entry.inputs && entry.inputs.length) {
+    html += '<h3>Inputs</h3><div class="inputs">';
+    for (const input of entry.inputs) {
+      const disabled = !online || !input.switchable ? 'disabled' : '';
+      const title = input.switchable ? '' :
+        'title="Select code not established for this model — see docs/capture-workflow.md"';
+      const sub = input.switchable
+        ? (input.connected === true ? 'signal' : input.connected === false ? 'no signal' : input.type)
+        : 'code unknown';
+      html += `<button data-input="${input.label}" ${disabled} ${title}>` +
+              `${input.label}<span class="sub">${sub}</span></button>`;
+    }
+    html += '</div>';
+  }
+
+  html += '<h3>Display</h3><div class="row">' +
+    `<button data-act="normal" ${online ? '' : 'disabled'}>Normal</button>` +
+    `<button class="danger" data-act="blackout" ${online ? '' : 'disabled'}>Blackout</button>` +
+    `<button class="danger" data-act="freeze" ${online ? '' : 'disabled'}>Freeze</button>`;
+  if (caps.panel_lock) {
+    html += `<button data-lock="1" ${online ? '' : 'disabled'}>Lock panel</button>`;
+  }
+  html += '</div>';
+
+  html += '<h3>Brightness</h3><div class="row">' +
+    `<input type="range" id="bright" min="0" max="100" value="60" ${online ? '' : 'disabled'}>` +
+    '<span id="brightval">60%</span>' +
+    `<button class="primary" id="applybright" ${online ? '' : 'disabled'}>Apply</button></div>`;
+
+  if (caps.test_pattern) {
+    html += '<h3>Test pattern</h3><div class="row">';
+    for (const pattern of ['normal', 'red', 'green', 'blue', 'white', 'grayscale']) {
+      html += `<button class="danger" data-pattern="${pattern}" ${online ? '' : 'disabled'}>${pattern}</button>`;
+    }
+    html += '</div>';
+  }
+
+  html += '<h3>Recent actions</h3><div class="log">';
+  const mine = state.history.filter((r) => r.address === entry.address);
+  html += mine.length
+    ? mine.map((r) => `<div class="${r.ok ? '' : 'fail'}">${new Date(r.timestamp * 1000)
+        .toLocaleTimeString()} ${r.action} ${r.detail || ''} ${r.ok ? '' : '— ' + r.error}</div>`).join('')
+    : '<div class="empty">Nothing sent yet.</div>';
+  html += '</div>';
+
+  panel.innerHTML = html;
+
+  panel.querySelectorAll('[data-input]').forEach((button) => {
+    button.onclick = () => act(entry.address, 'select_input', { label: button.dataset.input },
+                              `Switch to ${button.dataset.input}`);
+  });
+  panel.querySelectorAll('[data-act]').forEach((button) => {
+    button.onclick = () => act(entry.address, 'display_mode', { mode: button.dataset.act },
+                              button.dataset.act);
+  });
+  panel.querySelectorAll('[data-pattern]').forEach((button) => {
+    button.onclick = () => act(entry.address, 'test_pattern', { pattern: button.dataset.pattern },
+                              `Test pattern ${button.dataset.pattern}`);
+  });
+  const lock = panel.querySelector('[data-lock]');
+  if (lock) lock.onclick = () => act(entry.address, 'panel_lock', { locked: true }, 'Lock panel');
+
+  const slider = $('bright');
+  if (slider) {
+    slider.oninput = () => { $('brightval').textContent = slider.value + '%'; };
+    $('applybright').onclick = () => act(entry.address, 'brightness', { percent: Number(slider.value) });
+  }
+}
+
+function render() {
+  renderDeviceList();
+  renderDetail();
+  $('tick').textContent = new Date().toLocaleTimeString();
+}
+
+$('add').onclick = async () => {
+  const address = $('address').value.trim();
+  if (!address) return;
+  await api('/api/devices', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  });
+  $('address').value = '';
+  selected = selected || address;
+  render();
+};
+$('discover').onclick = async () => { await api('/api/discover', { method: 'POST' }); render(); };
+$('refresh').onclick = async () => { await api('/api/refresh', { method: 'POST' }); render(); };
+
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

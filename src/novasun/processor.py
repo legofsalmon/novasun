@@ -259,6 +259,33 @@ class Processor:
     def freeze(self, enabled: bool = True) -> None:
         self.set_display_mode(DisplayMode.FREEZE if enabled else DisplayMode.NORMAL)
 
+    def set_test_pattern(self, pattern: "reg.TestPattern | str") -> None:
+        """Show a built-in test pattern on the receiving cards.
+
+        Register-bus only. The COEX HTTP API has a test-pattern endpoint, but
+        its ``mode`` numbering is not documented in anything available here, so
+        this refuses rather than sending a guessed integer to a live screen.
+        """
+        if self.coex is not None:
+            raise CapabilityUnknown(
+                "COEX test-pattern mode numbering has not been established; "
+                "use the register bus, or capture VMP setting one "
+                "(see docs/capture-workflow.md)"
+            )
+        controller = self._require_controller("test patterns")
+        if isinstance(pattern, reg.TestPattern):
+            resolved = pattern
+        else:
+            key = str(pattern).upper().replace("-", "_").replace(" ", "_")
+            try:
+                resolved = reg.TestPattern[key]
+            except KeyError as exc:
+                available = ", ".join(p.name.lower() for p in reg.TestPattern)
+                raise ValueError(
+                    f"unknown test pattern {pattern!r}; available: {available}"
+                ) from exc
+        controller.set_test_pattern(resolved)
+
     def set_panel_lock(self, locked: bool) -> None:
         """Lock the front-panel LCD and buttons, on models that support it."""
         if self.profile.panel_lock_register is None:
