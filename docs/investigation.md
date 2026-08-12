@@ -287,3 +287,9 @@ The tooling for items 2–4 is built and tested:
 logging proxy that sits between NovaLCT and a controller, the pcap/pcapng
 analyser, and the differential method that turns the vendor software into the
 address-map documentation.
+
+The target hardware has since been settled — MX series, VX4S and NovaPro UHD Jr,
+Ethernet first — which spans both control paths and is why the device
+abstraction in [`../src/novasun/devices.py`](../src/novasun/devices.py) exists.
+See [`target-hardware.md`](target-hardware.md) for the model table, how
+identification picks a path, and the phasing that follows from it.

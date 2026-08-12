@@ -16,6 +16,9 @@ from novasun.simulator import SimulatedController
 SUBCOMMANDS = [
     [],
     ["discover"],
+    ["identify"],
+    ["models"],
+    ["simulate"],
     ["info"],
     ["status"],
     ["brightness"],

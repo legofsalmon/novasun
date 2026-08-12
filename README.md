@@ -17,6 +17,7 @@ work is.
 | [investigation.md](docs/investigation.md) | Findings, architecture recommendation, risks, next steps |
 | [protocol-register-bus.md](docs/protocol-register-bus.md) | Wire format, addressing, register map, worked examples |
 | [coex-http-api.md](docs/coex-http-api.md) | The port 8001 JSON API on MX/CX/KU controllers |
+| [target-hardware.md](docs/target-hardware.md) | The MX / VX4S / UHD Jr targets, identification, phasing |
 | [capture-workflow.md](docs/capture-workflow.md) | Day-one bring-up, and how to make NovaLCT document itself |
 | [prior-art.md](docs/prior-art.md) | Existing libraries and official interfaces, with licensing |
 | [sources.md](docs/sources.md) | Every document and repository this was built from |
@@ -34,24 +35,41 @@ src/novasun/
   transport.py   TCP and serial byte transports, stream reassembly
   discovery.py   UDP 3800 broadcast discovery
   client.py      Controller: read/write registers, display control, monitoring
+  devices.py     model IDs, per-model capabilities, identification
   coex.py        COEX HTTP API client (port 8001), snapshot and diff
   proxy.py       MITM proxy: log NovaLCT's conversation with a controller
   capture.py     pcap/pcapng parser, register summaries, differential analysis
   names.py       register naming, with an optional externally-imported map
-  simulator.py   a fake controller that speaks the same protocol
+  simulator.py   a fake controller: real chain topology, real error behaviour
+  coexsim.py     a fake COEX controller serving the HTTP API
   cli.py         command line front end
 ```
 
 ### Try it without hardware
 
+Both target families are simulated, so the application layer can be built before
+any hardware arrives:
+
 ```bash
-python -m novasun.simulator --port 5200 &
+python -m novasun simulate register --model uhd-jr &   # or vx4s, mctrl4k, ...
+python -m novasun simulate coex &                      # MX-class HTTP API
 
 python -m novasun info 127.0.0.1
 python -m novasun brightness 127.0.0.1 60
 python -m novasun test-pattern 127.0.0.1 blue
 python -m novasun status 127.0.0.1
-python -m novasun monitor 127.0.0.1
+python -m novasun monitor 127.0.0.1 --port-index 15 --card-index 2
+```
+
+The register-bus simulator models a real chain — ports, receiving cards with
+their own registers, `ack = TIMEOUT` for cards that are not there — so
+per-cabinet addressing mistakes fail here rather than on site.
+
+### Working out what a device is
+
+```bash
+python -m novasun identify 192.168.1.40   # model, family, ports, which path
+python -m novasun models                  # the whole device table
 ```
 
 ### Against real hardware
@@ -111,13 +129,13 @@ waiting for a wrapper.
 pip install pytest && python -m pytest
 ```
 
-64 tests. The protocol suite replays 26 frames printed in NovaStar's own
+116 tests. The protocol suite replays 26 frames printed in NovaStar's own
 documents and in shipped third-party tools, spanning 2014 to 2025 and four
 hardware generations; 24 reproduce byte-for-byte including their published
 checksums, and the two that do not are pinned as documented source errata. The
-client and proxy suites run end to end against the simulator, and the capture
-tests synthesise pcap and pcapng files to the file-format specifications rather
-than using committed fixtures.
+client, proxy and COEX suites run end to end against the simulators, and the
+capture tests synthesise pcap and pcapng files to the file-format specifications
+rather than using committed fixtures.
 
 ## Status and caveats
 

@@ -29,6 +29,7 @@ from pathlib import Path
 
 from . import capture as capture_module
 from . import coex as coex_module
+from . import devices
 from . import registers as reg
 from .client import Controller
 from .discovery import discover
@@ -43,24 +44,99 @@ def _controller(args: argparse.Namespace) -> Controller:
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
-    devices = discover(timeout=args.timeout)
-    if not devices:
+    found = discover(timeout=args.timeout)
+    if not found:
         print("no controllers answered the discovery probe")
         return 1
-    for device in devices:
+    for device in found:
         print(f"{device.address}\t{device.detail}")
+    return 0
+
+
+def cmd_identify(args: argparse.Namespace) -> int:
+    """Work out what a device is and which control path applies."""
+    identification = devices.identify(args.host, timeout=args.timeout)
+    if not (identification.reachable_http or identification.reachable_register_bus):
+        print(f"nothing answered at {args.host}", file=sys.stderr)
+        return 1
+    print(identification.summary())
+    return 0
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    rows = sorted(devices.MODELS.values(), key=lambda p: (p.family.value, p.name))
+    rows += sorted(set(devices.COEX_MODELS.values()), key=lambda p: p.name)
+    print(f"{'model':<18} {'family':<16} {'id':<8} ports  control")
+    for profile in rows:
+        identifier = f"0x{profile.model_id:04x}" if profile.model_id else "-"
+        control = "http 8001" if profile.http_api else f"tcp {profile.control_port}"
+        print(
+            f"{profile.name:<18} {profile.family.value:<16} {identifier:<8} "
+            f"{profile.port_count:<6} {control}"
+        )
+    return 0
+
+
+def cmd_simulate(args: argparse.Namespace) -> int:
+    if args.kind == "coex":
+        from .coexsim import CoexState, SimulatedCoexController
+
+        model = args.model or "MX40 Pro"
+        server = SimulatedCoexController(
+            args.host,
+            args.port if args.port is not None else 8001,
+            CoexState(model=model),
+        )
+        host, port = server.address
+        print(f"simulating {server.state.model} HTTP API on http://{host}:{port}")
+    else:
+        from .simulator import MODEL_ALIASES, SimulatedController
+
+        model = args.model or "vx4s"
+        model_id = MODEL_ALIASES.get(model.lower())
+        if model_id is None:
+            try:
+                model_id = int(model, 0)
+            except ValueError:
+                print(
+                    f"unknown model {model!r}; try one of: "
+                    + ", ".join(sorted(MODEL_ALIASES)),
+                    file=sys.stderr,
+                )
+                return 2
+        server = SimulatedController(
+            args.host,
+            args.port if args.port is not None else TCP_PORT,
+            model_id=model_id,
+            cards_per_port=args.cards_per_port,
+            latency=args.latency,
+        )
+        host, port = server.address
+        print(
+            f"simulating {server.profile.name} on {host}:{port} -- "
+            f"{server.port_count} ports x {server.cards_per_port} receiving cards"
+        )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0
 
 
 def cmd_info(args: argparse.Namespace) -> int:
     with _controller(args) as controller:
-        devices = controller.enumerate_devices()
-        if not devices:
+        chain = controller.enumerate_devices()
+        if not chain:
             print("connected, but no device answered a model-id read")
             return 1
-        for index, info in enumerate(devices):
+        for index, info in enumerate(chain):
+            profile = devices.profile_for(info.model_id)
             print(f"device {index}")
+            print(f"  model           {profile.name}")
             print(f"  model id        0x{info.model_id:04x}")
+            print(f"  output ports    {profile.port_count}")
             print(f"  serial          {info.serial}")
             print(f"  name            {info.name or '(unnamed)'}")
             print(f"  max packet size {info.max_packet_size}")
@@ -267,6 +343,30 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("host")
         sp.add_argument("--port", type=int, default=TCP_PORT)
         return sp
+
+    identify_parser = sub.add_parser(
+        "identify", help="what is this device, and how should it be driven"
+    )
+    identify_parser.add_argument("host")
+    identify_parser.set_defaults(func=cmd_identify)
+
+    models = sub.add_parser("models", help="list known models and their capabilities")
+    models.set_defaults(func=cmd_models)
+
+    simulate = sub.add_parser("simulate", help="run a fake controller for development")
+    simulate.add_argument(
+        "kind", choices=["register", "coex"], help="register bus, or the COEX HTTP API"
+    )
+    simulate.add_argument("--host", default="127.0.0.1")
+    simulate.add_argument("--port", type=int, help="default 5200, or 8001 for coex")
+    simulate.add_argument(
+        "--model",
+        help="register bus: an alias or hex id (default vx4s); coex: a model name "
+        "(default MX40 Pro)",
+    )
+    simulate.add_argument("--cards-per-port", type=int, default=2)
+    simulate.add_argument("--latency", type=float, default=0.0)
+    simulate.set_defaults(func=cmd_simulate)
 
     with_host("info", "identify the connected device(s)").set_defaults(func=cmd_info)
 

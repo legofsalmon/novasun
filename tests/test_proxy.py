@@ -43,10 +43,10 @@ def test_proxy_forwards_transparently(proxied) -> None:
     host, port = proxy.address
     with Controller.connect(host, port, timeout=2.0) as controller:
         info = controller.probe()
-        assert info is not None and info.model_id == 0x1107
+        assert info is not None and info.model_id == device.profile.model_id
 
         controller.set_brightness(60)
-        assert device.registers.read(reg.GLOBAL_BRIGHTNESS, 1) == bytes(
+        assert device.card(0, 0).read(reg.GLOBAL_BRIGHTNESS, 1) == bytes(
             [reg.brightness_byte(60)]
         )
 
