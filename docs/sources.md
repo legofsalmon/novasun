@@ -41,7 +41,31 @@ self-consistent. Two of the 26 do not match their
 own stated checksums; both are source errors and are documented as such in
 [`../tests/test_protocol.py`](../tests/test_protocol.py).
 
-No NovaStar hardware was available while this was written, so nothing here has
-been confirmed against a live controller. Register addresses marked `derived` in
+## Hardware
+
+Everything above is documentary. One physical source now exists:
+
+| Unit | Identified as | Available since |
+|---|---|---|
+| NovaPro UHD Jr | model ID `0x6205`, serial `16:04:11:00:c1:c9:2d:00`, discovery tail `App,0161` | 2026-08-26 |
+
+Driving 30 receiving cards (model `0x4506`, firmware `4.3.0.0`) across output
+ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
+reproduced across a power cycle of the unit.
+
+What it settled: the model ID against the decompiled table, the shape of the
+`rpProMI:` discovery reply, the receiving-card presence test, the §3.1.1
+monitoring decode, which input register the UHD Jr implements — and two
+undocumented firmware behaviours that make naive register reads return
+plausible wrong data, described in
+[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie).
+
+What it cannot settle: anything COEX (no MX-class unit), anything VX4S, input
+*values* as against the input *register*, and whether discovery replies are
+unicast or broadcast (that needs a second listening host).
+
+Register addresses still marked `derived` in
 [`../src/novasun/registers.py`](../src/novasun/registers.py) come from decompiled
-sources rather than documentation and should be verified before being relied on.
+sources rather than documentation and should be verified before being relied on;
+`OBSERVED` in the same module records which have now been seen on hardware, and
+`NOT_IMPLEMENTED` records which were looked for and found absent.

@@ -86,8 +86,28 @@ python -m novasun simulate register --model vx4s  # or uhd-jr, mctrl4k, ...
 python -m novasun simulate coex                   # MX-class HTTP API
 ```
 
-No NovaStar hardware has ever been available to this project. Everything is
-validated against vendor documents and the two simulators. When adding a
+A **NovaPro UHD Jr** has been on the bench since 2026-08-26, at `192.168.0.10`,
+driving 30 receiving cards across ports 0, 1, 2 and 4. It is the project's only
+hardware: everything COEX and everything VX4S is still document-and-simulator
+only. Findings confirmed on it are marked `OBSERVED` (see `registers.OBSERVED`
+and `registers.NOT_IMPLEMENTED`); `docs/sources.md` records what it can and
+cannot settle.
+
+**Two firmware behaviours make naive register reads lie**, both OBSERVED and
+both silent — well-formed frames, `ack = SUCCEEDED`, no error:
+
+- **An unimplemented address returns the previous read's payload**, not zeros.
+  A sequential sweep therefore reports nearly every address as a live register
+  holding plausible data. Test an address by poisoning the response buffer with
+  a known value first; use several distinct poisons, and key the verdict on
+  whether the value *varies with* the poison rather than on whether it ever
+  equals one. `bringup._classify_register` does this.
+- **Reads snap to field boundaries.** A read starting inside a multi-byte field
+  returns that field's start. Reads at documented base addresses are fine, so
+  this is a trap for probing, not a bug in normal use — but a block cannot be
+  walked byte by byte.
+
+Everything else is validated against vendor documents and the two simulators. When adding a
 protocol feature, add it to the relevant simulator too — otherwise it is
 untestable, and an untested protocol claim is a guess with extra steps.
 

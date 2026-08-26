@@ -527,7 +527,7 @@ def build_parser() -> argparse.ArgumentParser:
     bringup.add_argument("host")
     bringup.add_argument("--port", type=int, default=TCP_PORT)
     bringup.add_argument("--max-ports", type=int, default=16)
-    bringup.add_argument("--cards-per-port", type=int, default=8)
+    bringup.add_argument("--cards-per-port", type=int, default=32)
     bringup.add_argument("--json", help="also write the full report as JSON")
     bringup.set_defaults(func=cmd_bringup)
 

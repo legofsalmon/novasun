@@ -40,12 +40,23 @@ in [`../src/novasun/devices.py`](../src/novasun/devices.py) come from the
 `NSCardType` enum and `GetPortNumber` function generated from decompiled NovaLCT
 assemblies.
 
-One entry has independent confirmation: **MCTRL660 Pro = `0x1107`**, which is
-the value in the device-ID response printed in NovaStar's own *Protocol for
-MCTRL 660 Pro* document. The decompiled table agrees with the vendor's bytes on
-the one entry where both exist, which is a reasonable basis for trusting the
-rest — but only until you can check your own hardware. Confirming the model ID
-of each target processor is a five-minute job on day one and worth doing first.
+Two entries now have independent confirmation.
+
+**MCTRL660 Pro = `0x1107`** is the value in the device-ID response printed in
+NovaStar's own *Protocol for MCTRL 660 Pro* document.
+
+**NovaPro UHD Jr = `0x6205` is OBSERVED** — read from a real unit on 2026-08-26,
+reproduced across a power cycle. The same read also returned a serial
+(`16:04:11:00:c1:c9:2d:00`), a max packet size of 2048 and a communication
+protocol word of `02 05`, and the low block at `0x00000000` is internally
+consistent with the register map: the `0xA8` marker sits at `+6` and the u16 max
+packet size at `+7`, exactly where `registers.py` says they are.
+
+So the decompiled table now agrees with reality on both entries where an
+independent check exists — one vendor document, one bench. That is a materially
+better basis for trusting the rest than it was, but it is still two of roughly a
+hundred. Confirming the model ID of each target processor remains a five-minute
+job worth doing first.
 
 Not recognising a model is not a failure mode: `profile_for` returns a usable
 profile for anything, and the register bus does not care whether we know what we
@@ -106,6 +117,57 @@ document for it was found. `select_input` raises `CapabilityUnknown` — naming
 the capture workflow — instead of writing a plausible byte. A UI should show
 those inputs greyed out rather than hiding them: the connector is real, only our
 knowledge of its code is missing, and one capture session fills the gap.
+
+**The gap is now wider than it looked, and that is the finding.** All three
+candidate input-select registers are ruled out on a UHD Jr, by reading only.
+
+First, two of them are not backed by storage at all:
+
+| Candidate | Address | Verdict |
+|---|---|---|
+| VX4S input select | `0x0220002D` | **OBSERVED unimplemented** — 8/8 poison trials echoed |
+| NovaPro HD input select | `0x02200022` | **OBSERVED unimplemented** — 8/8 echoed |
+
+Classified with the poison-read discriminator in
+[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie),
+which is required here: the whole `0x022000xx` space on this model echoes the
+previous response rather than erroring, so a naive read of either address
+returns a plausible-looking value. An earlier note in this file, written from
+that evidence alone, concluded the third candidate was therefore the answer.
+**That conclusion was wrong**, and the correction is worth keeping visible.
+
+`0x02000023` (sending-card `DVI_SELECT`) *is* backed — 0/4 poison trials echoed,
+consistently `0x00`. But being backed is not the same as being the input
+selector, and a front-panel differential settled it:
+
+| Input selected | `0x02000023` |
+|---|---|
+| DisplayPort | `0x00` |
+| HDMI | `0x00` |
+| DVI 1 | `0x00` |
+
+It does not move. **`DVI_SELECT` is not the UHD Jr's input register.**
+
+Worse for anyone hoping to find it by sweeping: a fixed-order differential read
+of nine register regions — the low block, `0x02000000`, `0x02000100`,
+`0x02200000`, `0x02100000`, `0x13010000`, `0x13010100`, `0x10000100` and the
+name space — across three different selected inputs found **nothing that tracks
+the selection**. The only bytes that moved tracked *signal presence*, and were
+proven to do so by unplugging the source while leaving the input selected.
+
+So on a UHD Jr, input selection is currently **UNKNOWN**, and `CapabilityUnknown`
+is not a placeholder to be removed shortly — it is the correct and evidenced
+state. Finding the register needs a NovaLCT capture (see
+[`capture-workflow.md`](capture-workflow.md)) showing what the vendor software
+writes when *it* switches an input, because the state is evidently not where
+this repository was looking.
+
+What the same investigation *did* establish is per-connector signal state:
+`0x13010000` is an array of 32-byte records giving resolution and refresh for
+each input. That is documented in
+[`read-only-monitoring.md`](read-only-monitoring.md#per-connector-signal-state----observed).
+It answers "does HDMI have a signal, and at what resolution", which is useful,
+but it does not answer "which input is live".
 
 This is the pattern to keep as the map grows: connectors are facts about the
 hardware, select codes are facts about the protocol, and the two are established

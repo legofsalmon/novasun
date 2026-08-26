@@ -8,13 +8,18 @@ Confidence labels used throughout:
 
 | Label | Meaning |
 |---|---|
+| **OBSERVED** | Seen on real hardware by this project, and reproduced |
 | **OFFICIAL** | Stated in a NovaStar document |
 | **DERIVED** | From decompiled NovaLCT assemblies or published client code |
 | **REASONED** | An inference from protocol properties, not observed |
 | **UNKNOWN** | Not established. Needs a bench. Do not design around a guess |
 
-No NovaStar hardware was available while this was written. Nothing below is
-marked OBSERVED, because nothing has been.
+Most of this document was written with no NovaStar hardware available. On
+2026-08-26 a **NovaPro UHD Jr** (model ID `0x6205`, firmware reporting
+`App,0161`) was put on the bench, and the facts it settled are now marked
+**OBSERVED**. Every OBSERVED claim below was reproduced across a power cycle of
+the unit. Note the scope: one processor, one model, no receiving cards attached.
+An OBSERVED fact here is a fact about that unit, not yet about the fleet.
 
 ---
 
@@ -107,23 +112,47 @@ session with a controller and NovaLCT settles questions 1 and 2 together.
 
 ## 2. Decoding the `rpProMI:` reply
 
-**UNKNOWN — and I need to correct something.** An earlier note in
+**Partly settled — one reply has now been captured.** An earlier note in
 [`investigation.md`](investigation.md) said the reply "appears to carry model and
 name information this implementation currently ignores". That overstated what I
-had. I had not seen a reply. What I had was `sarakusha/novastar` discarding
-everything after the prefix, and I inferred there must be something worth
-discarding. That inference is not evidence, and crewbox should not plan around
-it.
+had at the time, and it was withdrawn. It is worth keeping the correction on the
+record even now that a sample exists, because the sample does **not** vindicate
+the guess: the tail carries no model ID and no device name.
 
-What is actually established:
+The captured reply, from a NovaPro UHD Jr:
+
+```
+rpProMI:App,0161
+727050726f4d493a 4170702c30313631
+└── prefix ────┘ └── tail, 8 bytes: ASCII "App,0161"
+```
 
 | Fact | Confidence |
 |---|---|
-| Probe is the 8 ASCII bytes `rqProMI:` | **DERIVED** |
-| Reply begins `rpProMI:` | **DERIVED** |
-| Both on UDP 3800; multicast group `224.224.125.119` | **DERIVED** |
-| The device is identified by the reply's **source IP** | **DERIVED** |
-| Anything after the prefix | **UNKNOWN** — no sample, no document |
+| Probe is the 8 ASCII bytes `rqProMI:` | **OBSERVED** |
+| Reply begins `rpProMI:` | **OBSERVED** |
+| Both on UDP 3800; multicast group `224.224.125.119` | **OBSERVED** |
+| The device is identified by the reply's **source IP** | **OBSERVED** |
+| Reply is 16 bytes total: 8-byte prefix + 8-byte tail | **OBSERVED**, one model |
+| Tail is **ASCII**, not binary | **OBSERVED** |
+| Tail of this unit is `App,0161` | **OBSERVED** |
+| Tail is stable across a power cycle | **OBSERVED** |
+| The tail contains **no model ID and no device name** | **OBSERVED** |
+| What `App` and `0161` actually mean | **UNKNOWN** |
+| Whether the tail is fixed-width on other models | **UNKNOWN** |
+| Whether the reply is unicast or broadcast | **UNKNOWN** — see below |
+
+`App` is plausibly a run-mode marker (application firmware, as against a
+bootloader) and `0161` plausibly a version, but both readings are **REASONED**
+and neither is worth building on. What matters for a consumer is the shape:
+the tail is short ASCII, and **identification still has to come from the
+register bus or the HTTP API, not from discovery**. A consumer that hoped to
+build an inventory with model names from discovery alone cannot.
+
+**The unicast question is still open.** The reply was received by the host that
+sent the probe, which is consistent with either unicast or broadcast and so
+settles nothing. Deciding it needs a second host listening on UDP 3800 while a
+*different* host probes — that experiment has not been run.
 
 I searched the decompiled NovaLCT assemblies shipped with `sarakusha/novastar`
 for the discovery strings and found nothing: the handshake lives in a component
@@ -275,6 +304,30 @@ card's firmware, and a health flag (a card that answers with all-zero firmware
 is not running). Combined with the `0x0A000000` block it gives per-cabinet
 temperature and voltage.
 
+**All of this is now OBSERVED**, against a UHD Jr driving 30 receiving cards:
+
+| Fact | Evidence |
+|---|---|
+| Present card answers `0x00000000` with model + firmware | 30 cards, model `0x4506`, firmware `4.3.0.0` |
+| Absent position answers `ack = TIMEOUT` | ports 3 and 5–15, and every index past the end of a chain |
+| Chains are addressable per port and per index | ports 0 and 2 hold 10 cards, port 4 holds 9, port 1 holds 1 |
+| Cards are individually addressed, not aliased | per-card temperature spread 33–37 °C, voltage 4.2–4.3 V |
+| The §3.1.1 decode is correct | validity bit, `raw[1] x 0.5` for temperature, `(raw[3] & 0x7F) / 10` for volts |
+| The validity bits mean what they say | humidity byte reads `0x00`, correctly decoded as "no reading", on cards with no humidity sensor |
+
+Two things worth drawing out.
+
+**The receiving-card presence test is not affected by the stale-buffer trap in
+§5.** An absent position returns a genuine `TIMEOUT` ack, not an echo — verified
+by poisoning the buffer with three different values and probing a card position
+each time, which returned the card's real data every time. So unlike register
+probing on the sending card, *chain enumeration can be trusted at face value*.
+That is the good news in this document for anyone building a cabinet view.
+
+**A gap in a port does not mean the end of the chain.** This unit populates
+ports 0, 1, 2 and 4, skipping 3. An enumerator that stops at the first empty
+port finds a quarter of the installation. Enumerate all of them.
+
 The cost is that it needs a **control session on TCP 5200**, which is the thing
 a read-only consumer should not take. It is a read in protocol terms and an
 intrusion in operational terms. `survey` therefore leaves it behind
@@ -287,15 +340,149 @@ hardware as cabinets over HTTP, with no session to take.
 
 ### On non-COEX hardware (VX4S, NovaPro UHD Jr)
 
-**No read-only path exists.** There is no HTTP API and no SNMP; monitoring means
-reading the `0x0A000000` block per receiving card over the register bus, which
-requires a TCP control session on 5200 that NovaLCT may hold exclusively
-(**REASONED**). `register_bus_monitor` does it, but for these models a
-monitoring pane should expect to show "reachable / not reachable" plus whatever
-identity it can get, and not much else, unless it is willing to hold a control
-connection.
+**No session-free path exists.** There is no HTTP API and no SNMP; everything
+below needs a TCP control session on 5200, and a controller accepts only one --
+**OBSERVED**: opening a second connection to a UHD Jr while one was already
+established reset the existing one (`ECONNRESET`), so this is genuinely
+exclusive, not merely discouraged. A consumer that takes it takes it from
+NovaLCT.
+
+What was previously written here -- that such a pane could show "reachable / not
+reachable plus whatever identity it can get, and not much else" -- **understated
+what is available.** Behind that one session a UHD Jr exposes a great deal:
+
+- per-receiving-card temperature, voltage and health (`0x0A000000`, above)
+- the real chain topology, per port and per index
+- **per-input-connector signal state**, which is new -- see below
+
+### Per-connector signal state -- OBSERVED
+
+`VIDEO_SOURCE_STATE` at `0x13010000` is not a flat block describing "the current
+input", which is how this repository previously described it. It is an **array
+of 32-byte records, one per connector**, carrying its own index:
+
+| Offset in record | Width | Meaning | Confidence |
+|---|---|---|---|
+| `+0x04` | u16 | signal width in pixels, `0` when no signal | **OBSERVED** |
+| `+0x06` | u16 | signal height in pixels, `0` when no signal | **OBSERVED** |
+| `+0x08` | u16 | measured frame period in microseconds | **REASONED** |
+| `+0x16` | u8 | record index, `0x00`..`0x08` ascending | **OBSERVED** |
+| `+0x19` | u16 | refresh rate in centihertz (`6000` = 60.00 Hz) | **REASONED** |
+
+On a UHD Jr, records `0`-`7` are input connectors and record `8` reports
+`3840x2160` -- the unit's own 4K canvas, not an input. Past record 8 the values
+are incoherent and the index byte stops ascending: that is the end of the array,
+not more data.
+
+**Record 1 is the HDMI connector on this unit**, established by plugging and
+unplugging a 1920x1080 source: record 1 alone moved between `1920x1080` and
+`0x0` while records 0 and 2-7 stayed at zero throughout. Which connector each
+of the other indices corresponds to is **UNKNOWN** -- it needs a source on each
+in turn, and this bench had only one.
+
+The two rate fields are worth distinguishing. `+0x08` jitters between 16663 and
+16666 between consecutive reads, which is what a *measured* period does;
+`+0x19` reads a rock-steady `6000`, which is what a *nominal* declared rate does.
+Both come to 60.00 Hz. That reading is REASONED from the arithmetic and the
+jitter, not from any document.
+
+**For a monitoring pane this is the useful find:** signal presence, resolution
+and refresh for every input, all by reading. `width == 0` is a reliable "no
+signal" indicator -- it was observed going to zero on cable removal and back to
+`1920x1080` on reconnection, with nothing else in nine swept register regions
+moving.
+
+**What is NOT available: which input is selected.** See
+[`target-hardware.md`](target-hardware.md#refusing-rather-than-guessing). A
+consumer cannot currently show "this processor is on HDMI"; it can show "HDMI
+has a 1920x1080 signal", which is a different statement. Do not present one as
+the other.
 
 ---
+
+## 5. Two register-bus traps that make reads lie
+
+**OBSERVED on a NovaPro UHD Jr, reproduced across a power cycle.** Both of these
+contradict assumptions this project previously held in writing, and both matter
+to anyone who reads registers — including a read-only consumer, because *both
+are triggered by reads alone*. Neither produces an error. Both produce
+plausible-looking wrong data.
+
+### Trap 1: an unimplemented address returns the previous response
+
+An earlier version of [`investigation.md`](investigation.md) said "unknown
+addresses generally read back as zeros". **That is wrong, and the correction is
+the single most important finding on this page.** Reading an address the
+firmware does not implement returns *the payload of the previous read on that
+connection*, apparently straight out of an uncleared response buffer:
+
+```
+read 0x02200020 (8 bytes) as the first request of a session -> 01 00 00 00 00 00 00 00
+read 0x0008FFF2 -> 54           then read 0x02200020 -> 54 08 00 00 00 00 00 00
+read 0x00000000 -> 09 36 05 62  then read 0x02200020 -> 09 36 05 62 00 00 00 00
+read 0x00000016 -> 16 04 11 00 c1 c9 2d 00
+                                then read 0x02200020 -> 16 04 11 00 c1 c9 2d 00
+```
+
+The response frame is otherwise well-formed: correct header, correct echoed
+address, `ack = SUCCEEDED`, valid checksum. Nothing about it says "no such
+register".
+
+The consequence is severe for map-building. **A register sweep that reads
+candidate addresses in sequence will report almost all of them as implemented,
+with values that look like real data**, because each is echoing its predecessor.
+Any address-map work — anyone's, not just this project's — must control for it.
+
+**The discriminator: poison the buffer.** Read a known register with a
+distinctive value, then read the candidate. If the candidate returns the poison,
+it is unimplemented. Repeat with a second, different poison, because a candidate
+whose genuine value happens to match one poison would otherwise be misread —
+this is not hypothetical, a two-trial version of this test misclassified
+`0x02200022` before a four-poison version settled it:
+
+```
+poison 0x00000000 -> 09 36 ...   candidate reads 09  -> echo
+poison 0x00000016 -> 16 04 ...   candidate reads 16  -> echo      => UNIMPLEMENTED
+poison 0x00000000 -> 09 36 ...   candidate reads 00  -> independent
+poison 0x00000016 -> 16 04 ...   candidate reads 00  -> independent => REAL, value 0x00
+```
+
+Four poisons over two rounds classified every candidate 8/8 consistently. Fewer
+than that is not enough.
+
+### Trap 2: reads snap to field boundaries
+
+The bus is **field-addressed, not byte-addressed**. This project has described it
+throughout as a memory bus where a read returns N bytes at an address; that is
+not quite what the firmware does. A read whose start address falls *inside* a
+multi-byte field silently returns data from the **beginning of that field**:
+
+```
+truth at 0x00000000:  09 36 05 62 02 05 a8 00 08
+  read(0x01, 2) -> 09 36     byte-truth would be 36 05    SNAPPED to field at 0x00
+  read(0x03, 2) -> 05 62     byte-truth would be 62 02    SNAPPED to field at 0x02
+  read(0x05, 2) -> 02 05     byte-truth would be 05 a8    SNAPPED to field at 0x04
+  read(0x07, 2) -> 00 08     correct - 0x07 IS a field base (u16 max packet size)
+  read(0x08, 2) -> 00 08     byte-truth would be 08 00    SNAPPED to field at 0x07
+```
+
+Reading *forward across* fields works correctly, and a read that starts on a
+field base is always right. Since the documented registers are field bases, code
+that reads them as documented is unaffected — this is a trap for probing, not a
+bug in existing reads. But it means **you cannot walk a block byte by byte to
+discover its layout**: the byte-by-byte walk of `0x00000000` returns
+`09 09 05 05 02 02 a8 00 00`, which is not the block's contents. Read blocks
+whole.
+
+### What a read-only consumer should take from this
+
+- Reading is still safe. Neither trap changes controller state; both are about
+  believing the answer.
+- Do not treat "the read succeeded and returned non-zero" as evidence a register
+  exists. It is not.
+- Prefer whole-block reads at documented base addresses over exploratory offsets.
+- If crewbox ever displays a value read from an address this repository has not
+  marked as verified, poison-test it first or label it unverified.
 
 ---
 
@@ -415,13 +602,20 @@ own, so it is usable from a read-only consumer that polls by other means.
 
 | Question | Answer |
 |---|---|
-| Passive inventory | Probes always visible; **replies may be unicast — UNKNOWN**. Do not assume passive discovery yields an inventory |
-| `rpProMI:` payload | **UNKNOWN, no sample.** My earlier "appears to carry model and name" was speculation and is withdrawn |
+| Passive inventory | Probes always visible; **replies may be unicast — still UNKNOWN**. Do not assume passive discovery yields an inventory |
+| `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
+| Trusting a register read | **Two OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring, and reads snap to field boundaries. Poison-test anything unverified |
 | Polling 8001 with VMP attached | **Very probably safe for GET, unverified.** Use the read-only client, 10–30 s cadence, back off on code 5 |
 | Monitoring over GET | **Rich over SNMP** (official OIDs, incl. per-card status and per-input signal); **good over HTTP** with provisional field names; **nothing** on VX4S / UHD Jr without a control session |
 | Consuming it | `survey_network()` / `novasun survey --json`, `schema_version` 1. Leave `allow_register_bus` off |
 
-The two things worth doing on the first day with hardware, in order: **capture
-one `rpProMI:` reply** (settles questions 1 and 2 in a minute), and **check
-whether SNMP is enabled** — if it is, most of the monitoring pane is already
-available through an interface designed for exactly this.
+**Status of the first-day list.** Capturing an `rpProMI:` reply is **done** —
+see §2; it settled the reply's shape but not the unicast question, which needs a
+second listening host. Checking **whether SNMP is enabled** is still outstanding
+and still the highest-value item for crewbox: if it is on, most of the
+monitoring pane is already available through an interface designed for exactly
+this. The bench unit so far is a UHD Jr, which has no SNMP and no HTTP API, so
+that question needs COEX hardware to answer.
+
+Added to the list by §5: **do not build any register map from an unguarded
+sweep.** That applies to crewbox as much as to this repository.

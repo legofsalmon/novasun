@@ -233,3 +233,102 @@ class TestReceivingCardEnumeration:
         card = controller.probe_receiving_card(0, 0)
         assert card is not None
         assert json.dumps(card.to_dict())
+
+
+class TestStaleResponseBuffer:
+    """An unimplemented address echoes the previous read instead of erroring.
+
+    OBSERVED on a NovaPro UHD Jr and reproduced across a power cycle: reading an
+    address the firmware does not back returns the previous read's payload in a
+    well-formed frame with ack = SUCCEEDED. Nothing in the response says "no
+    such register", so a sequential sweep reports nearly every address as live,
+    holding plausible data.
+
+    These tests exist so the discriminator that defeats it cannot regress.
+    """
+
+    UNBACKED = 0x0220_0020
+
+    @pytest.fixture()
+    def server(self):
+        s = SimulatedController(
+            "127.0.0.1", 0, model_id=0x6205, unimplemented=((self.UNBACKED, 0x10),)
+        )
+        s.serve_in_thread()
+        yield s
+        s.shutdown()
+        s.server_close()
+
+    def test_unbacked_address_echoes_the_previous_read(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            first = controller.read(reg.CONTROLLER_SN_HIGH, 8)
+            assert controller.read(self.UNBACKED, 8) == first
+
+            second = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+            assert controller.read(self.UNBACKED, 2) == second
+
+    def test_the_echo_is_not_an_error_and_not_zeros(self, server) -> None:
+        """The trap is precisely that it looks like a successful read."""
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            controller.read(reg.CONTROLLER_SN_HIGH, 8)
+            echoed = controller.read(self.UNBACKED, 8)
+        assert echoed != bytes(8)          # not zeros, as the docs once claimed
+        assert any(echoed)                 # and it carries plausible content
+
+    def test_a_backed_register_is_independent_of_the_poison(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            controller.read(reg.CONTROLLER_SN_HIGH, 8)
+            a = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+            controller.read(0x0000_0000, 8)
+            b = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+        assert a == b
+
+    def test_one_poison_can_misclassify_a_backed_register(self, server) -> None:
+        """Why the discriminator needs more than one poison.
+
+        A register whose genuine value happens to equal the poison looks like an
+        echo. This is not hypothetical: a two-trial version of this test
+        misclassified 0x02200022 during bring-up of the first real unit.
+        """
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            # Poison with the model ID, then read the model ID: a single trial
+            # cannot tell "echoed" from "genuinely equal".
+            poison = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+            assert controller.read(reg.CONTROLLER_MODEL_ID, 2) == poison
+
+    def test_bringup_classifier_separates_backed_from_unbacked(self, server) -> None:
+        from novasun.bringup import _classify_register
+
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            backed = _classify_register(
+                controller, reg.CONTROLLER_MODEL_ID, 2, Target.sending_card()
+            )
+            unbacked = _classify_register(
+                controller, self.UNBACKED, 2, Target.sending_card()
+            )
+        assert backed["verdict"] == "implemented"
+        assert unbacked["verdict"] == "unimplemented"
+        assert unbacked["trials_echoed"] == unbacked["trials_total"]
+
+    def test_a_coincidental_echo_does_not_condemn_a_backed_register(self, server) -> None:
+        """The model ID is itself one of the poisons, so one trial must echo.
+
+        The classifier keys on whether the value VARIES WITH the poison, not on
+        whether it ever equals one, so the coincidence is tolerated rather than
+        being reported as inconclusive.
+        """
+        from novasun.bringup import _classify_register
+
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            result = _classify_register(
+                controller, reg.CONTROLLER_MODEL_ID, 2, Target.sending_card()
+            )
+        assert result["verdict"] == "implemented"
+        assert result["trials_echoed"] >= 1        # the coincidence really happens
+        assert result["value"] == "0562"           # and the value is still right

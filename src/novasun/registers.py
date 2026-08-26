@@ -9,7 +9,26 @@ Every entry here is corroborated by at least one of:
 
 ``CONFIDENCE`` records which. Treat ``derived`` entries as good starting points
 to confirm against your own hardware, not as guarantees; register semantics vary
-across controller generations and receiving-card chipsets.
+across controller generations and receiving-card chipsets. ``OBSERVED`` records
+what a bench unit actually did, which is a separate question.
+
+**Two hardware behaviours make naive reads lie.** Both are OBSERVED on a NovaPro
+UHD Jr and reproduced across a power cycle; both return well-formed frames with
+``ack = SUCCEEDED``, so neither is detectable from a single read:
+
+1. **An unimplemented address returns the previous read's payload**, not zeros
+   and not an error. A sequential sweep therefore reports nearly every address
+   as live, holding plausible data. To test an address, read a known register
+   with a distinctive value first ("poison"), then the candidate: if it comes
+   back as the poison, it is unimplemented. Use at least two different poisons —
+   a candidate whose real value coincides with one poison is otherwise
+   misclassified.
+2. **Reads snap to field boundaries.** A read starting inside a multi-byte field
+   silently returns data from that field's *start*. Reads at documented base
+   addresses are unaffected, so this is a trap for probing rather than a bug in
+   normal use — but it means a block cannot be walked byte by byte.
+
+See ``docs/read-only-monitoring.md`` section 5 for the evidence.
 """
 
 from __future__ import annotations
@@ -68,7 +87,26 @@ BLUE_GAMMA_TABLE = 0x0500_0400  # 512 bytes
 
 SCREEN_CONFIG_SPACE = 0x0210_0000  # sending-card screen configuration block
 SOFTWARE_SPACE = 0x0500_0000  # NovaLCT's own "software space" on the sending card
-VIDEO_SOURCE_STATE = 0x1301_0000  # 64 bytes of input-signal state
+VIDEO_SOURCE_STATE = 0x1301_0000
+"""Array of per-connector signal records, NOT a flat block.
+
+Described here as "64 bytes of input-signal state" until hardware showed
+otherwise. It is an array of :data:`VIDEO_SOURCE_RECORD_SIZE`-byte records, each
+carrying its own ascending index at ``+0x16``; on a NovaPro UHD Jr records 0-7
+are input connectors and record 8 reports the output canvas. Reading it as one
+flat structure yields whichever connector happens to sit at the offset being
+read, which is how this was originally misread as "the current input".
+"""
+VIDEO_SOURCE_RECORD_SIZE = 32
+VIDEO_SOURCE_INPUT_RECORDS = 8  # uhd-jr: 0..7 are inputs, 8 is the output canvas
+
+# Offsets within one video-source record. Width/height are OBSERVED; the two
+# rate fields are reasoned from arithmetic and from which of them jitters.
+VSR_WIDTH = 0x04  # u16, 0 when no signal
+VSR_HEIGHT = 0x06  # u16, 0 when no signal
+VSR_FRAME_PERIOD_US = 0x08  # u16 microseconds; jitters, so it is measured
+VSR_INDEX = 0x16  # u8, ascends 0x00..0x08 and stops
+VSR_REFRESH_CHZ = 0x19  # u16 centihertz; steady, so it is nominal
 
 # --- COEX-era controller registers (MX/CX/KU, VMP hardware) ----------------
 PRESET_SWITCH = 0x0A00_0002  # u8, preset number, 1-based
@@ -111,6 +149,71 @@ CONFIDENCE: dict[int, str] = {
     THREE_D_ENABLE: "official (COEX central control 3.4.4)",
     THREE_D_EYE: "official (COEX central control 3.4.6)",
     WORKING_MODE: "official (COEX central control 3.4.8)",
+}
+
+
+#: What real hardware showed, as distinct from where the address came from.
+#:
+#: ``CONFIDENCE`` records provenance -- which document or decompiled source an
+#: address came from. This records the separate question of what a bench unit
+#: actually did when the address was read. The two are independent: a register
+#: can be OFFICIAL and absent from a given model, or derived and clearly present.
+#:
+#: "implemented" here means the address is backed by real storage, established
+#: with the poison-read discriminator below -- **not** that the documented
+#: semantics hold. ``WORKING_MODE`` is the cautionary case: the address is
+#: backed, but it reads 0x54 on a UHD Jr, which is neither of the two documented
+#: values, so its meaning on that model is unknown.
+#:
+#: Reproduced across a power cycle of the unit on 2026-08-26.
+OBSERVED: dict[int, str] = {
+    CONTROLLER_MODEL_ID: "uhd-jr: 0x6205, matches the decompiled table",
+    COMMUNICATION_PROTOCOL: "uhd-jr: reads 0x0502; meaning unconfirmed",
+    MAX_PACKET_PROBE: "uhd-jr: 0xA8 marker present exactly as documented",
+    MAX_PACKET_SIZE: "uhd-jr: 2048",
+    CONTROLLER_SN_HIGH: "uhd-jr: 16:04:11:00:c1:c9:2d:00",
+    DEVICE_NAME_SPACE: "uhd-jr: implemented, all zeros (unit has no name set)",
+    GAMMA: "uhd-jr: implemented, reads 0xFF",
+    GLOBAL_BRIGHTNESS: "uhd-jr: implemented, reads 0xFF (100%)",
+    BRIGHTNESS_16BIT: "uhd-jr: implemented, reads 0x0000",
+    DVI_SELECT: "uhd-jr: backed by storage (0/4 poison trials echoed) but NOT "
+                "the input selector -- reads 0x00 on DisplayPort, HDMI and "
+                "DVI 1 alike. The UHD Jr's input register is UNKNOWN",
+    LOW_DELAY: "uhd-jr: implemented, reads 0x00",
+    KILL_MODE: "uhd-jr: implemented, reads 0x00 (not blacked out)",
+    SELF_TEST_MODE: "uhd-jr: implemented, reads 0x00 (no test pattern)",
+    LOCK_MODE: "uhd-jr: implemented, reads 0x00 (not frozen)",
+    SCREEN_CONFIG_SPACE: "uhd-jr: implemented",
+    VIDEO_SOURCE_STATE: "uhd-jr: an ARRAY of 32-byte per-connector records, not "
+                        "a flat block. Records 0-7 are input connectors, record "
+                        "8 is the 3840x2160 output canvas, beyond that is "
+                        "unmapped. Per record: u16 width +0x04, u16 height "
+                        "+0x06 (both 0 = no signal), u16 measured frame period "
+                        "in microseconds +0x08, u8 record index +0x16, u16 "
+                        "refresh in centihertz +0x19. Record 1 = HDMI, proven "
+                        "by plug/unplug. See docs/read-only-monitoring.md",
+    SENDING_CARD_DISPLAY: "uhd-jr: implemented, reads 0x0000",
+    LOW_LATENCY: "uhd-jr: implemented, reads 0x00",
+    WORKING_MODE: "uhd-jr: implemented, reads 0x54 -- NOT one of the documented "
+                  "0/1 values; semantics unknown on this model",
+    RECEIVING_CARD_INFO: "uhd-jr chain: present cards answer model+firmware, "
+                         "absent positions answer ack=TIMEOUT. Unaffected by "
+                         "the stale-buffer behaviour, so it can be trusted",
+    RECEIVER_MONITORING: "uhd-jr chain: §3.1.1 decode confirmed on 30 cards -- "
+                         "temperature 33-37C, voltage 4.2-4.3V, humidity "
+                         "correctly invalid where there is no sensor",
+}
+
+#: Addresses a bench unit does **not** implement, per model.
+#:
+#: These matter because an unimplemented address does not error and does not
+#: read zero -- it returns the previous read's payload (see the module note).
+#: Recording the negative result is what stops the next person rediscovering it.
+NOT_IMPLEMENTED: dict[str, dict[int, str]] = {
+    "uhd-jr": {
+        0x0220_002D: "VX4S input select: echoes the previous response, 8/8 trials",
+        0x0220_0022: "NovaPro HD input select: echoes the previous response, 8/8",
+    },
 }
 
 
