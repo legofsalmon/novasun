@@ -365,9 +365,9 @@ of 32-byte records, one per connector**, carrying its own index:
 |---|---|---|---|
 | `+0x04` | u16 | signal width in pixels, `0` when no signal | **OBSERVED** |
 | `+0x06` | u16 | signal height in pixels, `0` when no signal | **OBSERVED** |
-| `+0x08` | u16 | measured frame period in microseconds | **REASONED** |
+| `+0x08` | u16 | measured frame period in microseconds | **OBSERVED** |
 | `+0x16` | u8 | record index, `0x00`..`0x08` ascending | **OBSERVED** |
-| `+0x19` | u16 | refresh rate in centihertz (`6000` = 60.00 Hz) | **REASONED** |
+| `+0x19` | u16 | refresh rate in centihertz (`6000` = 60.00 Hz) | **OBSERVED** |
 
 On a UHD Jr, records `0`-`7` are input connectors and record `8` reports
 `3840x2160` -- the unit's own 4K canvas, not an input. Past record 8 the values
@@ -380,11 +380,35 @@ unplugging a 1920x1080 source: record 1 alone moved between `1920x1080` and
 of the other indices corresponds to is **UNKNOWN** -- it needs a source on each
 in turn, and this bench had only one.
 
-The two rate fields are worth distinguishing. `+0x08` jitters between 16663 and
-16666 between consecutive reads, which is what a *measured* period does;
-`+0x19` reads a rock-steady `6000`, which is what a *nominal* declared rate does.
-Both come to 60.00 Hz. That reading is REASONED from the arithmetic and the
-jitter, not from any document.
+The two rate fields were confirmed by driving the connector at two rates from a
+laptop and watching the record:
+
+| Source mode | width x height | `+0x19` | `+0x08` | `1e6 / period` |
+|---|---|---|---|---|
+| 1920x1080 @ 60 Hz | `1920x1080` | `6000` | 16663-16666 us | 60.01 Hz |
+| *link re-training* | `0x0` | — | — | — |
+| 1920x1080 @ 50 Hz | `1920x1080` | `5000` | 20000 us | 50.00 Hz |
+| 3840x2160 @ 60 Hz | `3840x2160` | `6000` | 16663 us | 60.01 Hz |
+
+Resolution and refresh vary independently of each other, which is what
+establishes that these are four separate fields rather than one composite mode
+code.
+
+So `+0x19` is the **nominal** rate in centihertz and `+0x08` the **measured**
+frame period in microseconds — 20000 us is exactly 1/50 s, and only `+0x08`
+jitters, which is the tell for a measurement rather than a declaration. A
+consumer wanting a stable "50 Hz" label should read `+0x19`; one wanting to
+detect a drifting or out-of-spec source should watch `+0x08`.
+
+The mode change also passed through a brief no-signal state that the record
+reported as `0x0`, so `width == 0` tracks genuine signal loss during link
+re-training and not merely cable removal.
+
+One practical note for anyone reproducing this: changing a *scaled* resolution
+on macOS does not change the wire timing, and the record correctly does not
+move. Only a genuine output-mode change reaches the connector. That is a useful
+property in itself — the record reports what the processor actually receives,
+not what the source believes it is displaying.
 
 **For a monitoring pane this is the useful find:** signal presence, resolution
 and refresh for every input, all by reading. `width == 0` is a reliable "no

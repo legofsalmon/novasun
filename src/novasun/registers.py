@@ -100,13 +100,15 @@ read, which is how this was originally misread as "the current input".
 VIDEO_SOURCE_RECORD_SIZE = 32
 VIDEO_SOURCE_INPUT_RECORDS = 8  # uhd-jr: 0..7 are inputs, 8 is the output canvas
 
-# Offsets within one video-source record. Width/height are OBSERVED; the two
-# rate fields are reasoned from arithmetic and from which of them jitters.
-VSR_WIDTH = 0x04  # u16, 0 when no signal
-VSR_HEIGHT = 0x06  # u16, 0 when no signal
-VSR_FRAME_PERIOD_US = 0x08  # u16 microseconds; jitters, so it is measured
+# Offsets within one video-source record, all OBSERVED. The rate fields were
+# confirmed by driving a connector at 60 Hz and then 50 Hz: the nominal field
+# went 6000 -> 5000 while the measured period went ~16666 -> 20000 (exactly
+# 1/50 s). Only the measured one jitters, which is how the two were told apart.
+VSR_WIDTH = 0x04  # u16, 0 when no signal; seen at 1920 and 3840
+VSR_HEIGHT = 0x06  # u16, 0 when no signal; seen at 1080 and 2160
+VSR_FRAME_PERIOD_US = 0x08  # u16 microseconds, measured: 16666 @60Hz, 20000 @50Hz
 VSR_INDEX = 0x16  # u8, ascends 0x00..0x08 and stops
-VSR_REFRESH_CHZ = 0x19  # u16 centihertz; steady, so it is nominal
+VSR_REFRESH_CHZ = 0x19  # u16 centihertz, nominal: 6000 @60Hz, 5000 @50Hz
 
 # --- COEX-era controller registers (MX/CX/KU, VMP hardware) ----------------
 PRESET_SWITCH = 0x0A00_0002  # u8, preset number, 1-based
