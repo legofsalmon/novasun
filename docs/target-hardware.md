@@ -174,12 +174,34 @@ demonstrably can. The only bytes ever seen to move across an input change
 tracked *signal presence*, and were proven to do so by unplugging the source
 while leaving the input selected.
 
-**Scope of the negative, stated honestly.** This swept the sending card only
-(`device_type = SENDING_CARD`), across those eleven regions, not the whole
-32-bit space. Input selection could still live at a base nobody has thought to
-look at, behind a different device type, or in a write-only register that reads
-back as something else. What is ruled out is that it sits anywhere in the space
-this project's address map actually describes.
+A second, wider sweep was then run against the bases the address map does *not*
+describe. Probing every top-level base `0x00000000`-`0x1F000000` with the poison
+discriminator found **26 backed bases**, four of them carrying structured
+non-zero data this project had never recorded:
+
+```
+0x03000000  a8 03 00 00 40 03 00 00 d8 02 00 00 70 02 00 00   (936, 832, 728, 624)
+0x09000000  ff ff ff ff 00 00 ...
+0x0a000000  00 06 01 00 01 01 01 02 01 00 03 01 01 3c 00 05
+0x13000000  c0 00 a8 00 00 00 0a 00 ff 00 ff 00 ff 00 00 00
+```
+
+Sweeping 8 KB at each of those 26 bases — 212,761 usable bytes after excluding
+self-jitter — across an input change again found **zero** differing bytes, with
+its own positive control detecting the same three refresh bytes.
+
+| Sweep | Coverage | Control (refresh change) | Test (input change) |
+|---|---|---|---|
+| Eleven mapped regions | 130,745 usable bytes | 3 bytes detected | **0** |
+| Twenty-six backed bases | 212,761 usable bytes | 3 bytes detected | **0** |
+
+**Scope of the negative, stated honestly.** Both sweeps read the sending card
+only (`device_type = SENDING_CARD`), and sampled 8 KB at each base rather than
+the whole 16 MB behind it. Input selection could still live deeper inside a
+base, behind a different device type, or in a write-only register that reads
+back as something else. What is ruled out is that it sits in the first 8 KB of
+any base this firmware backs — which includes every location this project's
+address map describes, and every location a reasonable person would look next.
 
 So on a UHD Jr, input selection is currently **UNKNOWN**, and `CapabilityUnknown`
 is not a placeholder to be removed shortly — it is the correct and evidenced
