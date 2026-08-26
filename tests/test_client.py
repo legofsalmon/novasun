@@ -316,19 +316,41 @@ class TestStaleResponseBuffer:
         assert unbacked["trials_echoed"] == unbacked["trials_total"]
 
     def test_a_coincidental_echo_does_not_condemn_a_backed_register(self, server) -> None:
-        """The model ID is itself one of the poisons, so one trial must echo.
+        """A backed register whose real value equals a poison must survive.
 
-        The classifier keys on whether the value VARIES WITH the poison, not on
-        whether it ever equals one, so the coincidence is tolerated rather than
-        being reported as inconclusive.
+        KILL_MODE reads 0x00, and several poison sources also lead with 0x00, so
+        most trials echo by coincidence. The classifier keys on whether the value
+        VARIES WITH the poison rather than on whether it ever equals one, so this
+        is reported as implemented rather than as unimplemented or inconclusive.
+
+        Getting this wrong is not hypothetical: an earlier version keyed on
+        equality and misclassified 0x02200022 on real hardware.
         """
         from novasun.bringup import _classify_register
 
         host, port = server.address
         with Controller.connect(host, port, timeout=1.0) as controller:
             result = _classify_register(
-                controller, reg.CONTROLLER_MODEL_ID, 2, Target.sending_card()
+                controller, reg.KILL_MODE, 1, Target.sending_card()
             )
         assert result["verdict"] == "implemented"
         assert result["trials_echoed"] >= 1        # the coincidence really happens
-        assert result["value"] == "0562"           # and the value is still right
+        assert result["value"] == "00"             # and the value is still right
+
+    def test_a_long_candidate_is_testable(self, server) -> None:
+        """Poisons are read at the candidate's length, so size does not matter.
+
+        An earlier version fixed the poison lengths and discarded any shorter
+        than the candidate, which left every long register with zero usable
+        trials -- reported as "unreadable", which reads as a device refusing when
+        the device had answered perfectly well.
+        """
+        from novasun.bringup import _classify_register
+
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            result = _classify_register(
+                controller, reg.DEVICE_NAME_SPACE, 88, Target.sending_card()
+            )
+        assert result["verdict"] == "implemented"
+        assert result["trials_total"] >= 2

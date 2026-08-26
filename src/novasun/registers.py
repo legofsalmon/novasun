@@ -184,8 +184,11 @@ OBSERVED: dict[int, str] = {
     CONTROLLER_SN_HIGH: "uhd-jr: 16:04:11:00:c1:c9:2d:00 -- NOT the MAC, which "
                         "is 54:b5:6c:08:5d:49 on the same unit",
     DEVICE_NAME_SPACE: "uhd-jr: implemented, all zeros (unit has no name set)",
-    GAMMA: "uhd-jr: implemented, reads 0xFF",
-    GLOBAL_BRIGHTNESS: "uhd-jr: implemented, reads 0xFF (100%)",
+    GAMMA: "uhd-jr: sending card reads 0xFF, receiving cards read 0x1C -- like "
+           "GLOBAL_BRIGHTNESS, the two levels disagree",
+    GLOBAL_BRIGHTNESS: "uhd-jr: sending card reads 0xFF while its receiving "
+                       "cards read 0xAA (67%). The sending-card register is NOT "
+                       "the wall's brightness -- read the cards for that",
     BRIGHTNESS_16BIT: "uhd-jr: implemented, reads 0x0000",
     DVI_SELECT: "uhd-jr: backed by storage (0/4 poison trials echoed) but NOT "
                 "the input selector -- reads 0x00 on DisplayPort, HDMI and "
@@ -207,6 +210,18 @@ OBSERVED: dict[int, str] = {
     LOW_LATENCY: "uhd-jr: implemented, reads 0x00",
     WORKING_MODE: "uhd-jr: implemented, reads 0x54 -- NOT one of the documented "
                   "0/1 values; semantics unknown on this model",
+    RGB_BRIGHTNESS: "uhd-jr: sending card ff ff ff ff; card p0c0 also ff ff ff ff",
+    BRIGHTNESS_16BIT: "uhd-jr: implemented, reads 0x0000",
+    PRESET_SWITCH: "uhd-jr: implemented, reads 0x01",
+    LAYER_SOURCE: "uhd-jr: implemented, reads 00 01 01",
+    THREE_D_ENABLE: "uhd-jr: implemented, reads 0x00",
+    THREE_D_EYE: "uhd-jr: implemented, reads 0x00",
+    SOFTWARE_SPACE: "uhd-jr sending card: opens 4e 53 53 44 -- ASCII \"NSSD\", a "
+                    "magic marker. Same address is RED_GAMMA_TABLE on a "
+                    "receiving card, so this overlap is real, not a slip",
+    RED_GAMMA_TABLE: "uhd-jr card p0c0: 00 00 08 00 10 00 18 00 ... -- a linear "
+                     "u16 ramp (0, 8, 16, 24), which is what a gamma table "
+                     "should look like untouched",
     RECEIVING_CARD_INFO: "uhd-jr chain: present cards answer model+firmware, "
                          "absent positions answer ack=TIMEOUT. Unaffected by "
                          "the stale-buffer behaviour, so it can be trusted",

@@ -439,6 +439,23 @@ move. Only a genuine output-mode change reaches the connector. That is a useful
 property in itself — the record reports what the processor actually receives,
 not what the source believes it is displaying.
 
+### The sending card's brightness is not the wall's brightness
+
+**OBSERVED, and a trap for exactly this kind of consumer.** On a UHD Jr driving
+30 cabinets, `GLOBAL_BRIGHTNESS` (`0x02000001`) read **`0xFF`** on the sending
+card and **`0xAA`** on its receiving cards. The wall was running at 67%, and the
+processor-level register said 100%. `GAMMA` disagrees between the two levels in
+the same way (`0xFF` against `0x1C`).
+
+A pane that reads the processor and labels it "brightness" will be wrong
+whenever the two have diverged, and will be wrong silently. **Read the receiving
+cards for anything you intend to display as the screen's state**, and treat the
+sending-card value as a separate quantity rather than as a cheaper way to get
+the same number.
+
+This is one more reason the chain walk matters: it is not only where the
+per-cabinet detail lives, it is where the *correct* screen-level values live too.
+
 **For a monitoring pane this is the useful find:** signal presence, resolution
 and refresh for every input, all by reading. `width == 0` is a reliable "no
 signal" indicator -- it was observed going to zero on cable removal and back to

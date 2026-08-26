@@ -40,17 +40,25 @@ INPUT_REGISTER_CANDIDATES = {
     "NovaPro HD 0x02200022": INPUT_REGISTER_NOVAPRO_HD,
 }
 
-#: Registers with distinctive, stable values, read immediately before a
-#: candidate to detect the stale-response-buffer behaviour described in
-#: :mod:`novasun.registers`. Their leading bytes differ from each other on
-#: purpose: a candidate whose genuine value coincides with one poison is
-#: misclassified by a single-poison test, which happened during bring-up of the
-#: first real unit before this was made rigorous.
-POISON_READS: tuple[tuple[int, int], ...] = (
-    (0x0000_0000, 8),                    # 09 36 05 62 ...
-    (reg.CONTROLLER_SN_HIGH, 8),         # the serial
-    (reg.CONTROLLER_MODEL_ID, 2),        # 05 62
-    (reg.MAX_PACKET_PROBE, 1),           # a8
+#: Addresses read immediately before a candidate, to fill the response buffer
+#: with a known value and so detect the stale-buffer behaviour described in
+#: :mod:`novasun.registers`.
+#:
+#: Each is read at the *candidate's* length rather than at a length of its own.
+#: Fixing the poison lengths instead looks simpler and is wrong twice over: a
+#: poison shorter than the candidate cannot be compared without assuming how the
+#: device pads the remainder, and discarding those leaves a long candidate with
+#: no usable trials at all -- which reports as "unreadable" and reads like a
+#: device refusing, when nothing of the sort happened.
+#:
+#: Several sources, because a candidate whose genuine value coincides with one
+#: poison is misclassified by a single-poison test. They are chosen to stay
+#: mutually distinct on the simulator as well as on hardware.
+POISON_SOURCES: tuple[int, ...] = (
+    0x0000_0000,             # hardware: 09 36 05 62 ...
+    reg.CONTROLLER_SN_HIGH,  # hardware: the serial
+    reg.SOFTWARE_SPACE,      # hardware: 4e 53 53 44 ("NSSD")
+    reg.DEVICE_NAME_SPACE,   # simulator: 0xA8 marker and the device name
 )
 
 #: Read-only registers worth capturing verbatim for later analysis.
@@ -191,23 +199,21 @@ def _classify_register(
     trials: list[dict[str, str]] = []
     echoes = 0
     values: set[bytes] = set()
-    # Only poisons at least as long as the candidate. A shorter one cannot be
-    # compared against a longer read without assuming how the device pads the
-    # leftover bytes, and that padding has not been established on hardware.
-    usable_poisons = [(a, n) for a, n in POISON_READS if n >= length]
-    for poison_address, poison_length in usable_poisons:
-        poison = _read_bytes(controller, poison_address, poison_length, target)
+    for poison_address in POISON_SOURCES:
+        if poison_address == address:
+            continue  # cannot poison with the register under test
+        poison = _read_bytes(controller, poison_address, length, target)
         value = _read_bytes(controller, address, length, target)
         if poison is None or value is None:
             trials.append({"poison": f"0x{poison_address:08x}", "read": "<unreadable>"})
             continue
-        echo = value == poison[:length]
+        echo = value == poison
         echoes += echo
         values.add(value)
         trials.append(
             {
                 "poison": f"0x{poison_address:08x}",
-                "poison_value": poison[:length].hex(),
+                "poison_value": poison.hex(),
                 "read": value.hex(),
                 "verdict": "echo" if echo else "independent",
             }
@@ -219,10 +225,13 @@ def _classify_register(
     # because its value stayed put while the poisons changed underneath it.
     usable = [t for t in trials if "verdict" in t]
     distinct_poisons = {t["poison_value"] for t in usable}
-    if not usable or len(distinct_poisons) < 2:
-        # With fewer than two distinct poisons there is nothing to vary against,
-        # so the honest answer is "not established" rather than a guess.
-        verdict, value = "unreadable" if not usable else "inconclusive", None
+    if not usable:
+        verdict, value = "unreadable", None
+    elif len(distinct_poisons) < 2:
+        # Every poison read back the same bytes, so nothing varied underneath
+        # the candidate and an echo is indistinguishable from a real value.
+        # Distinct from "unreadable": the device answered fine.
+        verdict, value = "no-distinct-poison", None
     elif len(values) == 1:
         verdict, value = "implemented", next(iter(values)).hex()
     elif echoes == len(usable):
