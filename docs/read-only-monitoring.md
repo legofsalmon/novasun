@@ -68,12 +68,25 @@ multicast `224.224.125.119`, both on UDP 3800 (**DERIVED**, from
 sees NovaLCT and VMP probing. That alone tells you a control application is
 running and roughly how often it scans.
 
-What is not: whether the **reply** is broadcast or unicast back to the
-requester. This decides everything for passive discovery. Published code reads
-the reply's source address from the datagram it receives, which is consistent
-with either. If replies are unicast — the likelier design — a listener on a
-third host sees probes but no inventory, and needs a port mirror or a tap to see
-replies at all.
+What is not, or rather **what no longer is**: whether the reply is broadcast or
+unicast. **It is unicast. OBSERVED, and this is the answer crewbox needs.** A
+packet capture of a discovery exchange on the wire:
+
+```
+probe  00:13:3b:fb:82:ea > ff:ff:ff:ff:ff:ff   192.168.0.50 > 192.168.0.255
+reply  54:b5:6c:08:5d:49 > 00:13:3b:fb:82:ea   192.168.0.10 > 192.168.0.50
+```
+
+The probe goes out to the broadcast MAC and the broadcast IP; the reply comes
+back addressed to **the requester's own MAC and IP**, at both layer 2 and layer
+3. A switch will not forward it to any other port.
+
+**Therefore passive discovery does not yield an inventory.** A listener on a
+third host sees every probe — so it can tell that NovaLCT or VMP is running, and
+how often it scans — but it never sees a single reply, and so never learns what
+is on the network. Getting the inventory passively needs a port mirror, a tap,
+or a listener running on the same host as the control application. This was
+previously guessed at as "the likelier design"; it is now measured.
 
 **How long would a listener wait?** **UNKNOWN.** NovaLCT's discovery cadence is
 not documented, and it may only probe on user action rather than on a timer. If
@@ -140,7 +153,8 @@ rpProMI:App,0161
 | The tail contains **no model ID and no device name** | **OBSERVED** |
 | What `App` and `0161` actually mean | **UNKNOWN** |
 | Whether the tail is fixed-width on other models | **UNKNOWN** |
-| Whether the reply is unicast or broadcast | **UNKNOWN** — see below |
+| Reply is **unicast** to the requester, at both layer 2 and layer 3 | **OBSERVED** |
+| The device does **not answer the multicast probe** | **OBSERVED**, one model |
 
 `App` is plausibly a run-mode marker (application firmware, as against a
 bootloader) and `0161` plausibly a version, but both readings are **REASONED**
@@ -149,10 +163,25 @@ the tail is short ASCII, and **identification still has to come from the
 register bus or the HTTP API, not from discovery**. A consumer that hoped to
 build an inventory with model names from discovery alone cannot.
 
-**The unicast question is still open.** The reply was received by the host that
-sent the probe, which is consistent with either unicast or broadcast and so
-settles nothing. Deciding it needs a second host listening on UDP 3800 while a
-*different* host probes — that experiment has not been run.
+**The unicast question is settled — the reply is unicast.** See §1: a capture
+shows it addressed to the requester's own MAC and IP. It took a packet capture
+rather than a second host, because the reply's destination address is in the
+frame.
+
+**A second finding from the same capture: this device ignores the multicast
+probe.** Probes were sent to the subnet broadcast, to the multicast group
+`224.224.125.119`, and unicast to the device, ~2 s apart. Broadcast and unicast
+each drew a reply within ~12 ms. The multicast probe drew nothing — and the
+capture confirms it left the host correctly, with the right layer-2 mapping
+(`01:00:5e:60:7d:77`) for that group, so this is the device declining to answer
+rather than a probe that never went out.
+
+That matters because this repository documents multicast as one of the two
+discovery destinations, **DERIVED** from published client code. On this model it
+is dead. A discovery implementation that used the multicast group alone would
+find nothing. Send the subnet broadcast; treat multicast as an extra that may
+work on other models, not as a path to rely on. Whether NovaLCT's own multicast
+probe is answered by *any* NovaStar model is **UNKNOWN**.
 
 I searched the decompiled NovaLCT assemblies shipped with `sarakusha/novastar`
 for the discovery strings and found nothing: the handshake lives in a component
@@ -626,7 +655,8 @@ own, so it is usable from a read-only consumer that polls by other means.
 
 | Question | Answer |
 |---|---|
-| Passive inventory | Probes always visible; **replies may be unicast — still UNKNOWN**. Do not assume passive discovery yields an inventory |
+| Passive inventory | **Settled: no.** Probes are visible, replies are **unicast to the requester** (OBSERVED, L2 and L3). A passive listener learns that a control app is scanning and how often, and nothing about what is on the network. An inventory needs a port mirror, a tap, or co-location with the control app |
+| Discovery destination | Send the **subnet broadcast**. The multicast group `224.224.125.119` went unanswered on a UHD Jr despite egressing correctly (OBSERVED) — do not rely on it |
 | `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
 | Trusting a register read | **Two OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring, and reads snap to field boundaries. Poison-test anything unverified |
 | Polling 8001 with VMP attached | **Very probably safe for GET, unverified.** Use the read-only client, 10–30 s cadence, back off on code 5 |
@@ -634,8 +664,8 @@ own, so it is usable from a read-only consumer that polls by other means.
 | Consuming it | `survey_network()` / `novasun survey --json`, `schema_version` 1. Leave `allow_register_bus` off |
 
 **Status of the first-day list.** Capturing an `rpProMI:` reply is **done** —
-see §2; it settled the reply's shape but not the unicast question, which needs a
-second listening host. Checking **whether SNMP is enabled** is still outstanding
+see §2 — and so is the unicast question, which turned out to need a packet
+capture rather than a second host. Checking **whether SNMP is enabled** is still outstanding
 and still the highest-value item for crewbox: if it is on, most of the
 monitoring pane is already available through an interface designed for exactly
 this. The bench unit so far is a UHD Jr, which has no SNMP and no HTTP API, so

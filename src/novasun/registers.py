@@ -42,7 +42,15 @@ CONTROLLER_MODEL_ID = 0x0000_0002  # u16
 COMMUNICATION_PROTOCOL = 0x0000_0004  # u16
 MAX_PACKET_PROBE = 0x0000_0006  # u8, 0xA8 marks a device that reports its max packet size
 MAX_PACKET_SIZE = 0x0000_0007  # u16
-CONTROLLER_SN_HIGH = 0x0000_0016  # 8 bytes, MAC/serial
+CONTROLLER_SN_HIGH = 0x0000_0016
+"""8 bytes of serial number. Not the MAC address, despite the decompiled name.
+
+A UHD Jr reads 16:04:11:00:c1:c9:2d:00 here while its Ethernet MAC, taken from a
+packet capture of the same unit in the same session, is 54:b5:6c:08:5d:49. The
+two are unrelated, and it is 8 bytes rather than 6. Earlier comments here and in
+docs/protocol-register-bus.md described it as "serial number / MAC"; the MAC
+half is withdrawn.
+"""
 DEVICE_NAME_SPACE = 0x1400_0000  # 88 bytes; 0xA8 marker, length at +17, name at +18
 
 SAVE_SENDER_PARAMETERS = 0x0100_0001  # u8, commit RAM settings to flash
@@ -173,7 +181,8 @@ OBSERVED: dict[int, str] = {
     COMMUNICATION_PROTOCOL: "uhd-jr: reads 0x0502; meaning unconfirmed",
     MAX_PACKET_PROBE: "uhd-jr: 0xA8 marker present exactly as documented",
     MAX_PACKET_SIZE: "uhd-jr: 2048",
-    CONTROLLER_SN_HIGH: "uhd-jr: 16:04:11:00:c1:c9:2d:00",
+    CONTROLLER_SN_HIGH: "uhd-jr: 16:04:11:00:c1:c9:2d:00 -- NOT the MAC, which "
+                        "is 54:b5:6c:08:5d:49 on the same unit",
     DEVICE_NAME_SPACE: "uhd-jr: implemented, all zeros (unit has no name set)",
     GAMMA: "uhd-jr: implemented, reads 0xFF",
     GLOBAL_BRIGHTNESS: "uhd-jr: implemented, reads 0xFF (100%)",

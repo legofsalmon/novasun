@@ -5,13 +5,20 @@ never sends. It binds UDP 3800, joins the discovery multicast group, and records
 what crosses it -- both the ``rqProMI:`` probes that NovaLCT and VMP emit and any
 ``rpProMI:`` replies that reach this host.
 
-**What a silent listener can actually see is not fully known.** The probe is
-broadcast, so it is always observable. Whether the *reply* is broadcast or
-unicast back to the requester decides whether a third-party listener sees the
-inventory at all, and that has not been established -- see
-``docs/read-only-monitoring.md``. This module is written so that one session
-with hardware settles it: run :func:`listen`, have someone open NovaLCT, and
-read the log.
+**What a silent listener can see is now established, and it is less than was
+hoped.** The probe is broadcast, so it is always observable. The *reply* is
+**unicast** back to the requester -- confirmed by packet capture, addressed to
+the requester's own MAC and IP at both layer 2 and layer 3 -- so a switch never
+forwards it here.
+
+A listener on a third host therefore sees probes and no replies. That is enough
+to report that a control application is running and how often it scans, and it
+is not enough to build an inventory. Doing that passively needs a port mirror, a
+tap, or running on the same host as the control application.
+
+The "probes seen but no replies" outcome this module reports is consequently the
+*expected* one on a third host, not a sign of a problem. See
+``docs/read-only-monitoring.md``.
 
 Nothing in this module transmits. :class:`PassiveListener` opens its socket
 receive-only and there is no send path in the class at all; the test suite
@@ -267,7 +274,7 @@ class PassiveInventory:
             lines.append(f"  {entry.address:<15} {entry.replies:>3} replies  {entry.detail}")
         if not self.devices and self.probes:
             lines.append(
-                "  probes seen but no replies -- replies are probably unicast to the "
+                "  probes seen but no replies -- replies are unicast to the "
                 "requester, so passive discovery needs a port mirror"
             )
         return "\n".join(lines)

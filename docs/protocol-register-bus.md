@@ -72,7 +72,7 @@ receiving-card display registers use `0xFF` rather than `0x01` for "on".
 | `0x00000004` | 2 | Communication protocol version | decompiled |
 | `0x00000006` | 1 | `0xA8` marks a device that reports its max packet size | NovaLCT |
 | `0x00000007` | 2 | Max packet size (else assume 256) | NovaLCT |
-| `0x00000016` | 8 | Serial number / MAC | decompiled |
+| `0x00000016` | 8 | Serial number (**not** the MAC — observed to differ from it) | decompiled + observed |
 | `0x14000000` | 88 | Device name block: `0xA8` marker, length at +17, text at +18 | NovaLCT |
 | `0x01000001` | 1 | **Save settings to flash** | M3 doc §3.15 |
 | `0x01000002` | 1 | **Restore factory defaults** | M3 doc §3.4 |
