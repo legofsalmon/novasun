@@ -15,6 +15,8 @@ from novasun.coexsim import SimulatedCoexController
 from novasun.registers import GLOBAL_BRIGHTNESS, KILL_MODE, SELF_TEST_MODE, brightness_byte
 from novasun.simulator import SimulatedController
 
+from conftest import SECOND_BIND, SECOND_KEY, host_key
+
 VX4S = 0x6107
 UHD_JR = 0x6205
 
@@ -36,9 +38,11 @@ def vx4s():
 
 @pytest.fixture()
 def coex():
-    # A second loopback address: the application keys devices by address, which
-    # is right for real hardware and means two simulators need two addresses.
-    server = SimulatedCoexController("127.0.0.2", 0)
+    # The application keys devices by address, which is right for real hardware
+    # and means two simulators need two addresses. See tests/conftest.py: the
+    # second one is platform-dependent, so it cannot be hard-coded.
+    server = SimulatedCoexController(SECOND_BIND, 0)
+    server.key_host = SECOND_KEY
     server.serve_in_thread()
     yield server
     server.shutdown()
@@ -58,8 +62,8 @@ def add_register_device(app, server):
 
 
 def add_coex_device(app, server):
-    host, port = server.address
-    return app.add(host, http_port=port, control_port=closed_port())
+    _host, port = server.address
+    return app.add(host_key(server), http_port=port, control_port=closed_port())
 
 
 class TestDeviceState:
