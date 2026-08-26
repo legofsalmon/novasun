@@ -115,6 +115,24 @@ def cmd_outputs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bringup(args: argparse.Namespace) -> int:
+    """Read-only first contact with real hardware."""
+    from .bringup import format_report, run
+
+    report = run(
+        args.host,
+        port=args.port,
+        timeout=args.timeout,
+        max_ports=args.max_ports,
+        cards_per_port=args.cards_per_port,
+    )
+    print(format_report(report))
+    if args.json:
+        Path(args.json).write_text(json.dumps(report.to_dict(), indent=2) + "\n")
+        print(f"\nfull report written to {args.json}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run the application: state, HTTP API and browser UI."""
     from .app.server import serve
@@ -502,6 +520,16 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--cards-per-port", type=int, default=2)
     simulate.add_argument("--latency", type=float, default=0.0)
     simulate.set_defaults(func=cmd_simulate)
+
+    bringup = sub.add_parser(
+        "bringup", help="read-only first contact with a real processor"
+    )
+    bringup.add_argument("host")
+    bringup.add_argument("--port", type=int, default=TCP_PORT)
+    bringup.add_argument("--max-ports", type=int, default=16)
+    bringup.add_argument("--cards-per-port", type=int, default=8)
+    bringup.add_argument("--json", help="also write the full report as JSON")
+    bringup.set_defaults(func=cmd_bringup)
 
     serve_parser = sub.add_parser("serve", help="run the application and its browser UI")
     serve_parser.add_argument("host", nargs="*", help="device addresses to load at start")
