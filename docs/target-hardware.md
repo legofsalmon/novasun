@@ -148,12 +148,38 @@ selector, and a front-panel differential settled it:
 
 It does not move. **`DVI_SELECT` is not the UHD Jr's input register.**
 
-Worse for anyone hoping to find it by sweeping: a fixed-order differential read
-of nine register regions — the low block, `0x02000000`, `0x02000100`,
-`0x02200000`, `0x02100000`, `0x13010000`, `0x13010100`, `0x10000100` and the
-name space — across three different selected inputs found **nothing that tracks
-the selection**. The only bytes that moved tracked *signal presence*, and were
-proven to do so by unplugging the source while leaving the input selected.
+Worse for anyone hoping to find it by sweeping. A fixed-order differential read
+of **131,072 bytes across eleven regions** — every base the address map uses:
+`0x00000000`, `0x0008F000`, `0x02000000` (64 KB), `0x02100000`, `0x02200000`,
+`0x05000000`, `0x0A000000`, `0x10000000`, `0x13000000`, `0x13010000` and
+`0x14000000` — found **nothing whatever that tracks the selected input**. Only
+327 of those bytes (0.25%) jitter on their own, so 130,745 were usable ground
+for the comparison.
+
+That negative carries a **positive control**, which is what makes it worth
+trusting rather than merely reporting. In the same session, with the same
+method and the same regions, changing only the *source refresh rate* from 60 Hz
+to 50 Hz was detected precisely, to the byte:
+
+```
+control: refresh 60 -> 50 Hz, input unchanged     3 bytes changed
+  0x13010029   41 -> 4e     frame period 16666 -> 20000 us
+  0x13010039   70 -> 88  }  nominal rate 0x1770 (6000) -> 0x1388 (5000)
+  0x1301003a   17 -> 13  }
+test:    HDMI -> DisplayPort, refresh unchanged    0 bytes changed
+```
+
+A sweep that finds nothing proves nothing if it cannot find anything; this one
+demonstrably can. The only bytes ever seen to move across an input change
+tracked *signal presence*, and were proven to do so by unplugging the source
+while leaving the input selected.
+
+**Scope of the negative, stated honestly.** This swept the sending card only
+(`device_type = SENDING_CARD`), across those eleven regions, not the whole
+32-bit space. Input selection could still live at a base nobody has thought to
+look at, behind a different device type, or in a write-only register that reads
+back as something else. What is ruled out is that it sits anywhere in the space
+this project's address map actually describes.
 
 So on a UHD Jr, input selection is currently **UNKNOWN**, and `CapabilityUnknown`
 is not a placeholder to be removed shortly — it is the correct and evidenced
