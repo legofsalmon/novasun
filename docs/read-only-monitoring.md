@@ -580,6 +580,52 @@ UHD Jr, which covers every documented block. `read_connector_signals` passes an
 explicit chunk to guarantee one frame, and there are tests asserting no request
 starts partway into the array.
 
+### Trap 4: the monitoring block is exactly 0x100 bytes
+
+`0x0A000100` **aliases `0x02000000`** on a UHD Jr's receiving cards. So a read
+longer than the documented block returns 256 bytes of monitoring followed by the
+card's display registers — gamma, brightness, kill/lock modes — with nothing to
+say the data changed meaning:
+
+```
+read 0x0A000000, 512 bytes -> bytes 256-271: 1c aa ff ff ff ff 3f 00 ...
+read 0x02000000,  16 bytes ->                1c aa ff ff ff ff 3f 00 ...
+```
+
+A consumer that reads "a bit extra for safety" gets plausible bytes that decode
+as nonsense temperatures and voltages. **Read `0x100` and no more**;
+`registers.RECEIVER_MONITORING_SIZE` exists so that is not a magic number.
+
+Address aliasing is not confined to this one case. Three pairs are OBSERVED on a
+UHD Jr — `0x03000000` ≡ `0x09000000` on the sending card, `0x03000000` ≡
+`0x13000000` on a receiving card, and `0x0A000100` ≡ `0x02000000` — which
+suggests the address decoder ignores some high bits rather than that these are
+deliberate mirrors. Treat an unexpected match between two regions as aliasing
+until shown otherwise, and do not conclude a register "also lives" at a second
+address.
+
+### Screen geometry is readable — OBSERVED
+
+Useful for a monitoring pane that wants to draw the wall rather than list it.
+
+| What | Where | On the bench wall |
+|---|---|---|
+| Cabinet pixel dimensions | receiving card `0x02000017`, `0x02000019` (u16 each) | `104` and `208`, identical on all 30 cards |
+| Row mapping table | receiving card `0x03000000` | u16 entries `0..103`, padded to 128 with `0xFFFF` |
+| Cabinet position table | sending card `0x03000000` | ten u32s, `936` down to `0`, step `104` |
+
+Three independent places agree on **104**, which is what makes it trustworthy as
+the cabinet's vertical pitch: the dimension field, the count of real entries in
+the row map, and the step in the position table.
+
+**What is REASONED rather than observed:** which of `0x02000017` and
+`0x02000019` is width and which is height, and that the sending-card table is
+positions at all. One wall of uniform cabinets cannot separate width from
+height, and cannot distinguish a position table from any other evenly-spaced
+quantity. A second wall — ideally with cabinets of a different size — settles
+both in minutes. Until then, a consumer can safely report "cabinets are 104x208"
+without committing to which axis is which.
+
 ### What a read-only consumer should take from this
 
 - Reading is still safe. Neither trap changes controller state; both are about

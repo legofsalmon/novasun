@@ -87,7 +87,53 @@ DVI_SELECT = 0x0200_0023  # u8, input source on the controller, see InputSource
 BRIGHTNESS_16BIT = 0x0200_000F  # u16
 
 RECEIVER_MONITORING = 0x0A00_0000
-"""0x100 bytes of receiving-card monitoring: temperature, voltage, fans, cables."""
+"""0x100 bytes of receiving-card monitoring: temperature, voltage, fans, cables.
+
+**Exactly** 0x100 bytes. ``0x0A000100`` aliases ``0x02000000`` on a UHD Jr's
+receiving cards, so a read longer than the block returns display registers
+without saying so: 256 bytes of monitoring followed by gamma, brightness and the
+rest, all looking like more monitoring. Read 0x100 and no more.
+"""
+RECEIVER_MONITORING_SIZE = 0x100
+
+# --- Screen geometry (receiving card) --------------------------------------
+# OBSERVED on a UHD Jr chain; the interpretation below is REASONED.
+CABINET_PIXELS_A = 0x0200_0017  # u16, reads 104 on every card of a 30-card wall
+CABINET_PIXELS_B = 0x0200_0019  # u16, reads 208 on every card of the same wall
+"""Cabinet pixel dimensions, almost certainly height and width in that order.
+
+Three independent places agree on 104: this field, the 104 real entries in
+:data:`ROW_MAPPING_TABLE`, and the 104-pixel step in
+:data:`CABINET_POSITION_TABLE` on the sending card. That makes 104 the vertical
+pitch with high confidence, and so ``CABINET_PIXELS_A`` the height.
+
+Which of the two is width and which height is nonetheless **REASONED, not
+observed** -- one wall of uniform cabinets cannot distinguish them, and a wall
+of 208x104 cabinets would produce identical readings to one of 104x208 laid out
+the other way. Confirm against a wall with non-square cabinets of known
+orientation before relying on it.
+"""
+
+ROW_MAPPING_TABLE = 0x0300_0000
+"""Receiving card: u16 entries mapping rows, 0..103, padded to 128 with 0xFFFF.
+
+Aliased at ``0x13000000`` on the same card. The 104 real entries match the
+cabinet height, which is what identifies this as a per-row table.
+"""
+
+CABINET_POSITION_TABLE = 0x0300_0000
+"""Sending card: ten u32 offsets, 936 down to 0 in steps of 104.
+
+Aliased at ``0x09000000``. Ten entries for the ten cabinets on this wall's
+longest chains, stepping by the cabinet height, which reads as the vertical
+position of each cabinet in the canvas. **REASONED** -- the arithmetic is
+compelling but no second wall has been seen, and a single uniform chain cannot
+distinguish a position table from any other evenly-spaced quantity.
+
+Note this shares an address with :data:`ROW_MAPPING_TABLE`, which is a different
+register on a different device type -- the same pattern as
+:data:`SOFTWARE_SPACE` and :data:`RED_GAMMA_TABLE` at ``0x05000000``.
+"""
 
 RED_GAMMA_TABLE = 0x0500_0000  # 512 bytes
 GREEN_GAMMA_TABLE = 0x0500_0200  # 512 bytes
@@ -225,6 +271,8 @@ OBSERVED: dict[int, str] = {
     RECEIVING_CARD_INFO: "uhd-jr chain: present cards answer model+firmware, "
                          "absent positions answer ack=TIMEOUT. Unaffected by "
                          "the stale-buffer behaviour, so it can be trusted",
+    CABINET_PIXELS_A: "uhd-jr chain: 104 on all 30 cards",
+    CABINET_PIXELS_B: "uhd-jr chain: 208 on all 30 cards",
     RECEIVER_MONITORING: "uhd-jr chain: §3.1.1 decode confirmed on 30 cards -- "
                          "temperature 33-37C, voltage 4.2-4.3V, humidity "
                          "correctly invalid where there is no sensor",
