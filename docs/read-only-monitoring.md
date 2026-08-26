@@ -544,6 +544,42 @@ discover its layout**: the byte-by-byte walk of `0x00000000` returns
 `09 09 05 05 02 02 a8 00 00`, which is not the block's contents. Read blocks
 whole.
 
+### Trap 3: a block must be read from its base in one request
+
+A corollary of trap 2, but it bites harder and in a way that looks like working
+code. The firmware serves a block when the request starts **at the block's base
+address**. A request starting partway in is resolved as whatever register lives
+at *that* address — which may be something else entirely, not the block's
+continuation.
+
+The video-source array is the case that caught this project out. Reading it from
+`0x13010000` returns a coherent array of records with ascending indices.
+Reading `0x13010100` — offset `0x100` into that same array — returns this:
+
+```
+e4 e8 01 20  80 7e 00 10  c8 d6 01 20  80 7e 00 10
+```
+
+Those look like pointers (`0x2001e8e4`, `0x10007e80`), not signal state. The
+address has its own meaning; it is not "the array, 256 bytes in".
+
+So a client that chunks a long read — as this repository's `Controller.read`
+does, at 256 bytes by default — silently corrupts any block longer than its
+chunk size *if a chunk boundary lands on a defined register*. The array came
+back one record short, with no error and nothing obviously wrong, until the
+missing record was noticed by eye.
+
+**It does not always bite**, which is what makes it nasty. The 512-byte gamma
+tables chunk perfectly well: `0x05000100` is apparently not separately defined,
+so the second request returns the continuation as hoped. Both reads produce the
+same clean monotonic ramp. You cannot tell the safe blocks from the unsafe ones
+by looking at the client.
+
+**Read blocks in a single request.** The negotiated max packet size is 2048 on a
+UHD Jr, which covers every documented block. `read_connector_signals` passes an
+explicit chunk to guarantee one frame, and there are tests asserting no request
+starts partway into the array.
+
 ### What a read-only consumer should take from this
 
 - Reading is still safe. Neither trap changes controller state; both are about
@@ -551,6 +587,8 @@ whole.
 - Do not treat "the read succeeded and returned non-zero" as evidence a register
   exists. It is not.
 - Prefer whole-block reads at documented base addresses over exploratory offsets.
+- Read each block in **one** request. If your client chunks long reads, make
+  sure a chunk boundary cannot land inside a block you care about.
 - If crewbox ever displays a value read from an address this repository has not
   marked as verified, poison-test it first or label it unverified.
 

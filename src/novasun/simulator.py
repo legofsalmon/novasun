@@ -85,6 +85,33 @@ def _sending_card_state(profile: DeviceProfile, name: str) -> RegisterFile:
     if profile.display.is_processor_level:
         assert profile.display.register is not None
         state.write_uint(profile.display.register, profile.display.normal, 1)
+    # A video-source record array, so the connector-signal decode is testable
+    # without hardware. Modelled on a real UHD Jr: an ascending index per
+    # record, one connector carrying a signal and the rest idle, and a trailing
+    # record reporting the output canvas rather than an input.
+    for index in range(reg.VIDEO_SOURCE_INPUT_RECORDS + 1):
+        record = bytearray(reg.VIDEO_SOURCE_RECORD_SIZE)
+        record[reg.VSR_INDEX] = index
+        if index == 1:                      # one connector with a source on it
+            record[reg.VSR_WIDTH:reg.VSR_WIDTH + 2] = (1920).to_bytes(2, "little")
+            record[reg.VSR_HEIGHT:reg.VSR_HEIGHT + 2] = (1080).to_bytes(2, "little")
+            record[reg.VSR_FRAME_PERIOD_US:reg.VSR_FRAME_PERIOD_US + 2] = (
+                (16666).to_bytes(2, "little"))
+            record[reg.VSR_REFRESH_CHZ:reg.VSR_REFRESH_CHZ + 2] = (
+                (6000).to_bytes(2, "little"))
+        elif index == reg.VIDEO_SOURCE_INPUT_RECORDS:   # the output canvas
+            record[reg.VSR_WIDTH:reg.VSR_WIDTH + 2] = (3840).to_bytes(2, "little")
+            record[reg.VSR_HEIGHT:reg.VSR_HEIGHT + 2] = (2160).to_bytes(2, "little")
+        state.write(reg.VIDEO_SOURCE_STATE + index * reg.VIDEO_SOURCE_RECORD_SIZE,
+                    bytes(record))
+    # Past the end of the array the index byte stops ascending, which is what
+    # terminates enumeration on real hardware.
+    state.write(
+        reg.VIDEO_SOURCE_STATE
+        + (reg.VIDEO_SOURCE_INPUT_RECORDS + 1) * reg.VIDEO_SOURCE_RECORD_SIZE,
+        bytes([0x7F] * reg.VIDEO_SOURCE_RECORD_SIZE),
+    )
+
     label = name.encode()[:64]
     block = bytearray(88)
     block[0] = 0xA8
