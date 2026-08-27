@@ -596,13 +596,37 @@ A consumer that reads "a bit extra for safety" gets plausible bytes that decode
 as nonsense temperatures and voltages. **Read `0x100` and no more**;
 `registers.RECEIVER_MONITORING_SIZE` exists so that is not a magic number.
 
-Address aliasing is not confined to this one case. Three pairs are OBSERVED on a
-UHD Jr — `0x03000000` ≡ `0x09000000` on the sending card, `0x03000000` ≡
-`0x13000000` on a receiving card, and `0x0A000100` ≡ `0x02000000` — which
-suggests the address decoder ignores some high bits rather than that these are
-deliberate mirrors. Treat an unexpected match between two regions as aliasing
-until shown otherwise, and do not conclude a register "also lives" at a second
-address.
+Address aliasing is not confined to this one case. **Two** pairs are OBSERVED on
+a UHD Jr, both on a receiving card: `0x03000000` ≡ `0x13000000`, and
+`0x0A000100` ≡ `0x02000000`. Each survives the test that matters — it equals its
+claimed twin and *not* whatever was read immediately before it.
+
+**A third pair, `0x03000000` ≡ `0x09000000` on the sending card, was published
+here and is now withdrawn.** It was an echo, not an alias, and the way it was
+produced is worth recording because it is the exact failure mode §5 trap 1
+describes:
+
+```
+tested as:  read 0x03000000 ; read 0x09000000 ; compare   -> "identical!"
+```
+
+Reading the claimed source immediately before the claimed alias guarantees a
+match on any unimplemented address, because the second read returns the first
+one's payload. In a later capture where `0x09000000` was preceded by a different
+read it returned something else entirely, which is what an echo does and an
+alias never does.
+
+**The test for an alias is therefore three-way**, and it is cheap:
+
+1. read a poison, then A, then B — B must equal A;
+2. read a *different* poison, then B alone — B must still equal A;
+3. B must not equal either poison.
+
+Anything less measures the read order rather than the address decoder. In the
+1 KB-chunked sweeps, 21 of 26 top-level bases returned exactly their
+predecessor's payload — so on this firmware, echo is the *common* case for an
+address that is not backed, and an unexpected match between two regions should
+be assumed to be one until all three steps pass.
 
 ### Screen geometry is readable — OBSERVED
 

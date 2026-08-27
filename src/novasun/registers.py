@@ -124,11 +124,16 @@ cabinet height, which is what identifies this as a per-row table.
 CABINET_POSITION_TABLE = 0x0300_0000
 """Sending card: ten u32 offsets, 936 down to 0 in steps of 104.
 
-Aliased at ``0x09000000``. Ten entries for the ten cabinets on this wall's
-longest chains, stepping by the cabinet height, which reads as the vertical
-position of each cabinet in the canvas. **REASONED** -- the arithmetic is
-compelling but no second wall has been seen, and a single uniform chain cannot
-distinguish a position table from any other evenly-spaced quantity.
+Ten entries for the ten cabinets on this wall's longest chains, stepping by the
+cabinet height, which reads as the vertical position of each cabinet in the
+canvas. **REASONED** -- the arithmetic is compelling but no second wall has been
+seen, and a single uniform chain cannot distinguish a position table from any
+other evenly-spaced quantity.
+
+An earlier version of this note said "aliased at ``0x09000000``". **Withdrawn.**
+That was an echo: the test read this address immediately before ``0x09000000``,
+which guarantees a match on any unimplemented address. Read after something
+else, ``0x09000000`` returns something else.
 
 Note this shares an address with :data:`ROW_MAPPING_TABLE`, which is a different
 register on a different device type -- the same pattern as

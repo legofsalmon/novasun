@@ -496,3 +496,46 @@ class TestAlertsInTheApplication:
         screen = app.snapshot()["screens"][0]
         assert screen["worst_severity"] == "critical"
         assert screen["alerts"][0]["address"] == device.address
+
+
+class TestDeviceErrorsAreStatesNotCrashes:
+    """A device answering with an error ack must not kill the refresh thread.
+
+    "Reachability is a state, never an exception" is a stated principle of this
+    layer, and DeviceError was quietly violating it. Reading monitoring from
+    chain position (0, 0) raises DeviceError(TIMEOUT) whenever no card is there
+    -- every processor with no panels attached, and every processor whose first
+    populated port is not port 0. ProtocolError is a plain Exception and was
+    caught nowhere in app/, monitor.py or survey.py, so it escaped into the
+    background refresh thread and froze the whole UI silently.
+
+    Found by auditing the codebase against real hardware findings; the bench
+    wall happened to have a card at (0, 0), so it never fired there.
+    """
+
+    @pytest.fixture()
+    def no_cards(self):
+        server = SimulatedController("127.0.0.1", 0, model_id=UHD_JR, cards_per_port=0)
+        server.serve_in_thread()
+        yield server
+        server.shutdown()
+        server.server_close()
+
+    def test_refresh_survives_a_processor_with_no_cards(self, app, no_cards) -> None:
+        device = add_register_device(app, no_cards)
+        state = device.refresh(force=True)          # must not raise
+        assert state.reachability == Reachability.ONLINE.value
+        assert state.model == "NovaPro UHD Jr"
+
+    def test_the_device_is_still_online_and_identified(self, app, no_cards) -> None:
+        """An absent card says nothing about whether the processor is reachable."""
+        device = add_register_device(app, no_cards)
+        state = device.refresh(force=True)
+        assert state.reachability == Reachability.ONLINE.value
+        assert state.status.get("temperature_c") is None
+
+    def test_repeated_refreshes_keep_working(self, app, no_cards) -> None:
+        """The original failure killed the thread, so the second tick never ran."""
+        device = add_register_device(app, no_cards)
+        for _ in range(3):
+            assert device.refresh(force=True).reachability == Reachability.ONLINE.value

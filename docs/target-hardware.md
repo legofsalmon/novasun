@@ -186,14 +186,35 @@ non-zero data this project had never recorded:
 0x13000000  c0 00 a8 00 00 00 0a 00 ff 00 ff 00 ff 00 00 00
 ```
 
-Sweeping 8 KB at each of those 26 bases — 212,761 usable bytes after excluding
-self-jitter — across an input change again found **zero** differing bytes, with
-its own positive control detecting the same three refresh bytes.
+Sweeping 8 KB at each of those 26 bases across an input change again found
+**zero** differing bytes, with its own positive control detecting the same three
+refresh bytes.
 
-| Sweep | Coverage | Control (refresh change) | Test (input change) |
+**That second sweep's coverage was, however, substantially overstated when first
+recorded, and the correction matters.** Re-examining the captured sweeps
+afterwards showed that **21 of the 26 bases returned exactly their predecessor's
+payload** — they were echoing, not answering. Only `0x00000000`, `0x02000000`,
+`0x03000000`, `0x05000000` and `0x0A000000` served independent content, and all
+but `0x03000000` were already covered by the first sweep. So the second sweep's
+genuinely new register coverage is roughly **8 KB at `0x03000000`**, not the
+212,761 bytes originally claimed.
+
+| Sweep | Real coverage | Control (refresh change) | Test (input change) |
 |---|---|---|---|
 | Eleven mapped regions | 130,745 usable bytes | 3 bytes detected | **0** |
-| Twenty-six backed bases | 212,761 usable bytes | 3 bytes detected | **0** |
+| Twenty-six backed bases | ~8 KB genuinely new; the rest echoed | 3 bytes detected | **0** |
+
+The negative result still holds, because it rests on the first sweep, which read
+real register space and carried its own control. What does *not* hold is the
+implication that the whole backed address space was examined.
+
+**An unresolved contradiction, flagged for the next session.** Those 21 bases
+were classified `implemented` by the poison discriminator using 16-byte reads —
+they returned a consistent all-zero value that tracked no poison. Yet at 1024
+bytes they echo. Short reads and long reads at the same address therefore behave
+differently, and only the short-read result went through the discriminator. Until
+that is resolved, treat "backed base" claims above `0x0A000000` as **UNKNOWN**:
+the 16-byte probe may itself have been measuring something other than storage.
 
 **Scope of the negative, stated honestly.** Both sweeps read the sending card
 only (`device_type = SENDING_CARD`), and sampled 8 KB at each base rather than

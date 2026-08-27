@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .coex import DEFAULT_PORT, CoexClient, CoexError
+from .protocol import ProtocolError
 
 #: GET endpoints worth polling, and how they map onto a monitoring pane.
 MONITORING_ENDPOINTS: dict[str, str] = {
@@ -175,7 +176,7 @@ class CoexMonitor:
             if exc.code == 5:  # Busying: the controller is doing something else
                 self.limiter.back_off()
             return None, str(exc)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, ProtocolError) as exc:
             return None, str(exc)
 
     def poll(self, include_slow: bool | None = None) -> MonitorSnapshot:

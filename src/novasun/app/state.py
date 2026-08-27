@@ -37,6 +37,7 @@ from pathlib import Path
 
 from ..devices import DeviceProfile, Family, identify, unknown_profile
 from ..processor import CapabilityUnknown, NotSupported, Processor
+from ..protocol import ProtocolError
 from ..registers import DisplayMode, TestPattern
 from . import config as config_module
 from .history import AlertEngine, Thresholds
@@ -193,7 +194,7 @@ class Device:
 
             try:
                 self._read_into_state(processor)
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, ProtocolError) as exc:
                 self._mark_down(Reachability.UNREACHABLE, str(exc))
             return self.state
 
@@ -244,7 +245,13 @@ class Device:
         status: dict[str, Any] = {}
         try:
             monitoring = processor.monitoring()
-        except (NotSupported, ValueError, OSError):
+        except (NotSupported, ValueError, OSError, ProtocolError):
+            # A device answering with an error ack is a normal condition, not an
+            # app-level failure. Reading monitoring from chain position (0, 0)
+            # raises DeviceError(TIMEOUT) whenever no card is there -- which is
+            # every processor with no panels attached, and every processor whose
+            # first populated port is not port 0. Without ProtocolError here that
+            # escapes into the refresh thread and the whole UI silently freezes.
             return status
         if hasattr(monitoring, "temperature_c"):
             status["temperature_c"] = monitoring.temperature_c
@@ -281,7 +288,7 @@ class Device:
                 return record
             try:
                 self._dispatch(processor, action, arguments)
-            except (CapabilityUnknown, NotSupported, ValueError) as exc:
+            except (CapabilityUnknown, NotSupported, ValueError, ProtocolError) as exc:
                 record.ok = False
                 record.error = str(exc)
             except OSError as exc:
@@ -292,7 +299,7 @@ class Device:
                 # Reflect the change straight away rather than waiting for a tick.
                 try:
                     self._read_into_state(processor)
-                except (OSError, ValueError):
+                except (OSError, ValueError, ProtocolError):
                     pass
         return record
 
