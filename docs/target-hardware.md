@@ -190,28 +190,45 @@ Sweeping 8 KB at each of those 26 bases across an input change again found
 **zero** differing bytes, with its own positive control detecting the same three
 refresh bytes.
 
-**That second sweep's coverage was, however, substantially overstated when first
-recorded, and the correction matters.** Re-examining the captured sweeps
-afterwards showed that **21 of the 26 bases returned exactly their predecessor's
-payload** — they were echoing, not answering. Only `0x00000000`, `0x02000000`,
-`0x03000000`, `0x05000000` and `0x0A000000` served independent content, and all
-but `0x03000000` were already covered by the first sweep. So the second sweep's
-genuinely new register coverage is roughly **8 KB at `0x03000000`**, not the
-212,761 bytes originally claimed.
+**The coverage of both sweeps was, however, badly overstated when first
+recorded, and the correction matters more than the original claim did.**
 
-| Sweep | Real coverage | Control (refresh change) | Test (input change) |
+Counting *distinct responses* rather than bytes requested tells a different
+story. Reading sequentially past a region's real extent does not fail — it
+returns the previous response (see
+[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie)).
+So a 64 KB sweep of a 1 KB region reads that 1 KB once and echoes it 63 times:
+
+| Sweep | Bytes requested | Distinct 1 KB responses | Distinct bytes |
 |---|---|---|---|
-| Eleven mapped regions | 130,745 usable bytes | 3 bytes detected | **0** |
-| Twenty-six backed bases | ~8 KB genuinely new; the rest echoed | 3 bytes detected | **0** |
+| Eleven mapped regions | 131,072 | 16 | 16,384 (12.5%) |
+| Twenty-six backed bases | 212,992 | 9 | 9,216 (4.3%) |
 
-The negative result still holds, because it rests on the first sweep, which read
-real register space and carried its own control. What does *not* hold is the
-implication that the whole backed address space was examined.
+`0x02000000` was swept as 64 KB and returned **one** distinct kilobyte. Twenty-one
+of the twenty-six bases in the second sweep returned nothing but their
+predecessor's payload.
 
-**An unresolved contradiction, flagged for the next session.** Those 21 bases
-were classified `implemented` by the poison discriminator using 16-byte reads —
-they returned a consistent all-zero value that tracked no poison. Yet at 1024
-bytes they echo. Short reads and long reads at the same address therefore behave
+**The honest figure is 20 distinct kilobytes across both sweeps combined** —
+`0x00000000`, `0x02000000`, `0x02100000`, `0x02200000`, `0x03000000` (3 KB),
+`0x05000000` (3 KB), `0x0A000000` (2 KB) and `0x13010000` (8 KB).
+
+The negative result survives, and its positive control is unaffected: the
+differential compared like against like, and the refresh change was detected in
+content that was genuinely returned. What does not survive is the *strength*
+originally claimed for it. **Input selection is absent from ~20 KB of distinct
+register content covering the display, screen-config, input, software,
+monitoring and video-source spaces** — not from 212,761 bytes, and not from
+anything like the whole address space.
+
+Recording bytes requested as though they were bytes observed is precisely the
+provenance failure this repository exists to avoid, and it went unnoticed for a
+day. Any future sweep must count distinct responses, and
+[`capture-workflow.md`](capture-workflow.md) says so.
+
+**An unresolved contradiction, flagged for the next session.** The 21 echoing
+bases were classified `implemented` by the poison discriminator using 16-byte
+reads — they returned a consistent all-zero value that tracked no poison. Yet at
+1024 bytes they echo. Short and long reads at the same address behave
 differently, and only the short-read result went through the discriminator. Until
 that is resolved, treat "backed base" claims above `0x0A000000` as **UNKNOWN**:
 the 16-byte probe may itself have been measuring something other than storage.

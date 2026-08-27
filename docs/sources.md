@@ -54,15 +54,20 @@ ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
 reproduced across a power cycle of the unit.
 
 What it settled: the model ID against the decompiled table, the shape of the
-`rpProMI:` discovery reply, the receiving-card presence test, the §3.1.1
-monitoring decode, which input register the UHD Jr implements — and two
-undocumented firmware behaviours that make naive register reads return
-plausible wrong data, described in
+`rpProMI:` discovery reply (and that replies are unicast), the receiving-card
+presence test, the §3.1.1 monitoring decode, cabinet geometry, the per-connector
+signal record layout — and four undocumented firmware behaviours that make naive
+register reads return plausible wrong data, described in
 [`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie).
 
-What it cannot settle: anything COEX (no MX-class unit), anything VX4S, input
-*values* as against the input *register*, and whether discovery replies are
-unicast or broadcast (that needs a second listening host).
+What it did **not** settle, despite an earlier version of this note claiming
+otherwise: **which input register the UHD Jr implements**. All three documented
+candidates are ruled out and the selection state was not found anywhere in the
+~20 KB of distinct register content swept. See
+[`target-hardware.md`](target-hardware.md#refusing-rather-than-guessing).
+
+What it cannot settle: anything COEX (no MX-class unit), anything VX4S, and
+input values in general.
 
 Register addresses still marked `derived` in
 [`../src/novasun/registers.py`](../src/novasun/registers.py) come from decompiled

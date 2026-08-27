@@ -78,7 +78,7 @@ receiving-card display registers use `0xFF` rather than `0x01` for "on".
 | `0x01000002` | 1 | **Restore factory defaults** | M3 doc §3.4 |
 | `0x02000023` | 1 | Input select — numbering is model-specific | MCTRL 660 Pro doc |
 | `0x02100000` | 15+ | Screen configuration space | decompiled |
-| `0x13010000` | 64 | Input signal state | decompiled |
+| `0x13010000` | 32 x N | Per-connector signal records, **not** a flat block — see [read-only-monitoring.md](read-only-monitoring.md#per-connector-signal-state----observed) | decompiled + observed |
 
 ### Receiving card (`device_type = 1`)
 
