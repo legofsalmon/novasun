@@ -34,6 +34,15 @@ For all future work here:
 - **Never widen crewbox's surface to writes.** `ReadOnlyCoexClient` rejects
   non-GET before a socket opens, and `passive.py` has no send path at all. Both
   properties are asserted by tests. Keep them.
+- **Ship evidence, not PRs.** When a finding affects crewbox, record it here —
+  the contract document, a fixture under `tests/fixtures/` with real structure
+  and synthetic values, a harness if one helps — and push. crewbox's own agent
+  applies it. Do not implement the crewbox side from this repository or open
+  PRs against it: on 2026-09-11 that was tried in parallel with crewbox's agent
+  working from the pushed fixture, and the agent's version landed first, better
+  reasoned for that codebase, and the duplicate had to be thrown away. The
+  handoff that worked was the one through the documents, which is what this
+  standing instruction is for.
 
 ## Provenance discipline
 
