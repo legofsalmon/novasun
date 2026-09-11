@@ -125,6 +125,8 @@ def cmd_bringup(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         max_ports=args.max_ports,
         cards_per_port=args.cards_per_port,
+        probe=not args.no_probe,
+        allow_register_bus=True if args.register_bus else None,
     )
     print(format_report(report))
     if args.json:
@@ -529,6 +531,15 @@ def build_parser() -> argparse.ArgumentParser:
     bringup.add_argument("--max-ports", type=int, default=16)
     bringup.add_argument("--cards-per-port", type=int, default=8)
     bringup.add_argument("--json", help="also write the full report as JSON")
+    bringup.add_argument(
+        "--no-probe", action="store_true", help="do not send the discovery broadcast"
+    )
+    bringup.add_argument(
+        "--register-bus",
+        action="store_true",
+        help="walk the register bus even on a COEX controller (takes a TCP 5200 "
+        "session; avoid during a show)",
+    )
     bringup.set_defaults(func=cmd_bringup)
 
     serve_parser = sub.add_parser("serve", help="run the application and its browser UI")

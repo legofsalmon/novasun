@@ -134,16 +134,54 @@ def _discovery(report: BringUp, timeout: float) -> None:
         )
 
 
-def _coex(report: BringUp, timeout: float) -> None:
-    from .coex import CoexClient, CoexError
+#: Read-only COEX endpoints worth capturing verbatim. Recording the raw JSON
+#: is the point: this repository's field names are reconstructed from the
+#: manual and have never been checked against firmware.
+COEX_ENDPOINTS = {
+    "device": "/api/v1/device",
+    "screen": "/api/v1/screen",
+    "cabinet": "/api/v1/device/cabinet",
+    "screen_cabinets": "/api/v1/screen/cabinets",
+    "input_sources": "/api/v1/device/input/sources",
+    "displaymode": "/api/v1/device/screen/displaymode",
+    "preset": "/api/v1/preset",
+    "monitor_info": "/api/v1/device/monitor/info",
+    "backup": "/api/v1/device/backup",
+    "snmpstate": "/api/v1/device/snmpstate",
+    "audio": "/api/v1/device/audio",
+    "multifunc_card": "/api/v1/device/multifunc-card/detailinfo",
+}
 
-    try:
-        client = CoexClient(report.host, timeout=timeout)
-        report.coex = {"answered": True, "device": client.device_info()}
-    except CoexError as exc:
-        report.coex = {"answered": True, "error": str(exc)}
-    except (OSError, ValueError) as exc:
-        report.coex = {"answered": False, "error": str(exc)}
+
+def _coex(report: BringUp, timeout: float, rate: float = 0.25) -> None:
+    """Read every documented GET endpoint through a client that cannot write.
+
+    ReadOnlyCoexClient rejects any method other than GET before a socket is
+    opened, so this cannot alter a live screen even by mistake.
+    """
+    from .coex import CoexError
+    from .monitor import ReadOnlyCoexClient
+
+    client = ReadOnlyCoexClient(report.host, timeout=timeout)
+    results: dict[str, Any] = {}
+    answered = False
+    for name, path in COEX_ENDPOINTS.items():
+        time.sleep(rate)  # deliberately unhurried: a show may be running
+        try:
+            results[name] = client.request("GET", path)
+            answered = True
+        except CoexError as exc:
+            # An API-shaped error still proves a COEX controller is there.
+            answered = True
+            results[name] = {"__error__": str(exc)}
+        except (OSError, ValueError) as exc:
+            results[name] = {"__error__": str(exc)}
+    report.coex = {"answered": answered, "endpoints": results}
+    if answered:
+        report.notes.append(
+            "COEX HTTP answered: this is an MX/CX/KU-class controller, driven "
+            "over the documented JSON API rather than the register bus"
+        )
 
 
 def _safe_read(controller: Controller, address: int, length: int, target: Target) -> Any:
@@ -159,10 +197,32 @@ def run(
     timeout: float = 2.0,
     max_ports: int = 16,
     cards_per_port: int = 8,
+    probe: bool = True,
+    allow_register_bus: bool | None = None,
 ) -> BringUp:
+    """Read-only first contact.
+
+    ``allow_register_bus`` defaults to "only if this is not a COEX controller".
+    A COEX box already answers everything over HTTP, and opening a TCP 5200
+    session on one during a show risks contending with VMP for a resource it
+    may be holding -- for no information we cannot get more safely.
+    """
     report = BringUp(host=host)
-    _discovery(report, timeout)
+    if probe:
+        _discovery(report, timeout)
+    else:
+        report.notes.append("discovery probe skipped (--no-probe)")
     _coex(report, timeout)
+
+    if allow_register_bus is None:
+        allow_register_bus = not report.coex.get("answered", False)
+    if not allow_register_bus:
+        report.notes.append(
+            "register-bus phase skipped. It would open a TCP 5200 control "
+            "session and walk the receiving-card chain; pass --register-bus "
+            "to do it anyway, ideally not during a show"
+        )
+        return report
 
     control_port = port
     controller: Controller | None = None
@@ -278,10 +338,16 @@ def format_report(report: BringUp) -> str:
         lines.append("  no replies")
     lines.append("")
 
-    lines.append("COEX HTTP (8001)")
+    lines.append("COEX HTTP (8001)  -- read-only GETs")
     lines.append(f"  answered: {report.coex.get('answered')}")
-    if report.coex.get("device"):
-        lines.append(f"  {report.coex['device']}")
+    for name, value in (report.coex.get("endpoints") or {}).items():
+        if isinstance(value, dict) and "__error__" in value:
+            lines.append(f"  {name:<16} ! {value['__error__']}")
+            continue
+        rendered = json.dumps(value)
+        if len(rendered) > 400:
+            rendered = rendered[:400] + f" ... ({len(rendered)} chars total)"
+        lines.append(f"  {name:<16} {rendered}")
     lines.append("")
 
     lines.append("IDENTITY (register bus)")
