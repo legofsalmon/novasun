@@ -372,8 +372,11 @@ position between the two reads, with the same ids and the same per-id
 attributes; `/api/v1/device/cabinet` kept a stable order, and
 `screenSourceStatus[]` reordered too. **Never trend or diff `monitor/info` by
 list index** — key everything on `rvCards[].cabinetID`. A positional comparison
-of the two snapshots reported 1,974 changes; keyed by id there were forty-one.
-`diff_snapshots` now aligns by identity for exactly this reason.
+of the two snapshots reported 1,974 changes across 15 fields; keyed by id there
+were 344 across 7 — of which 288 were the per-card runtime counters advancing,
+as they do on every read, and 41 were one-degree temperature flickers. The
+identity fields that had dominated the positional diff reported no change at
+all. `diff_snapshots` now aligns by identity for exactly this reason.
 
 What the same 35 minutes showed about *readings*, on a quiet wall (OBSERVED,
 one interval):
