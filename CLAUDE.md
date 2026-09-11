@@ -35,6 +35,36 @@ For all future work here:
   non-GET before a socket opens, and `passive.py` has no send path at all. Both
   properties are asserted by tests. Keep them.
 
+## Working at a venue
+
+This project gets run on show sites, against processors driving walls that an
+audience is looking at. **Assume the screen is live until a human says
+otherwise, and ask before anything that writes.**
+
+Read-only and safe at any time:
+
+- `novasun listen` — no send path in the module at all.
+- `novasun bringup HOST` — GETs only on COEX; on a register-bus box it reads,
+  but it does open a control session (see below).
+- `novasun survey`, `novasun watch`, `novasun identify`, `novasun inputs`.
+
+Writes, or takes a session another application may be holding — **not during a
+show without explicit agreement**:
+
+- `novasun proxy`, and any differential capture that drives NovaLCT or VMP.
+- `novasun bringup --register-bus`: opens TCP 5200 and walks the chain, which
+  on a 16-port processor is hundreds of frames.
+- `select-input`, `blackout`, `freeze`, `test-pattern`, `brightness`, and every
+  screen-scoped action.
+
+On COEX hardware (MX/CX/KU) prefer the HTTP API: it is stateless, documented for
+third-party use, and does not contend for the control session VMP holds. The
+register bus is the fallback for older processors, not the default.
+
+If an operator is mid-show and you are unsure, the right answer is to capture
+nothing rather than to guess. The bench will still be there next week; the show
+will not.
+
 ## Provenance discipline
 
 Every protocol fact in this repository carries where it came from. This is the
