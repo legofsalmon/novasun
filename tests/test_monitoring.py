@@ -53,6 +53,27 @@ class TestPassiveListener:
             with pytest.raises((TimeoutError, socket.timeout)):
                 peer.recvfrom(1024)
 
+    def test_a_null_listen_still_writes_a_session_record(self, tmp_path: Path) -> None:
+        """A run that hears nothing is a result, and must leave evidence of it.
+
+        Thirty minutes of silence on a live-show network with an MX40 present
+        is a finding about passive discovery. A log that was only ever written
+        per datagram left no trace of that run at all.
+        """
+        log = tmp_path / "listen.log"
+        listener = PassiveListener("127.0.0.1", 0, join_multicast=False, log_path=log)
+        try:
+            thread = listener.listen_in_thread(duration=0.3)
+            thread.join(timeout=2)
+        finally:
+            listener.stop()
+        text = log.read_text()
+        assert "# session start=" in text
+        assert "bind=127.0.0.1:" in text
+        assert "duration=0.3s" in text
+        assert "# session end=" in text
+        assert "observations=0" in text
+
     def test_observes_probes_and_replies(self) -> None:
         listener = PassiveListener("127.0.0.1", 0, join_multicast=False)
         try:

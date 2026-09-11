@@ -175,6 +175,12 @@ class PassiveListener:
     def listen(self, duration: float | None = None) -> list[Observation]:
         """Receive until ``duration`` elapses, or until :meth:`stop`."""
         self._running = True
+        started = time.time()
+        host, port = self.address
+        self._log_line(
+            f"# session start={started:.3f} bind={host}:{port} "
+            f"duration={'until-stopped' if duration is None else f'{duration:g}s'}"
+        )
         deadline = None if duration is None else time.monotonic() + duration
         while self._running:
             if deadline is not None:
@@ -191,6 +197,14 @@ class PassiveListener:
             except OSError:
                 break
             self._record(Observation(time.time(), source, payload))
+        # A run that hears nothing is a result -- thirty minutes of silence on a
+        # network with a controller on it says something about passive
+        # discovery -- so the session leaves evidence of itself even when no
+        # datagram ever did.
+        self._log_line(
+            f"# session end={time.time():.3f} elapsed={time.time() - started:.1f}s "
+            f"observations={len(self.observations)}"
+        )
         return self.observations
 
     def listen_in_thread(self, duration: float | None = None) -> threading.Thread:
@@ -198,15 +212,23 @@ class PassiveListener:
         thread.start()
         return thread
 
+    def _log_line(self, line: str) -> None:
+        """Append one line to the log, if there is one. Lines starting with
+        ``#`` are session records; every other line is a tab-separated datagram
+        (timestamp, source, payload hex)."""
+        if self.log_path is None:
+            return
+        with self._lock:  # a Condition's default lock is re-entrant
+            with self.log_path.open("a") as handle:
+                handle.write(line + "\n")
+
     def _record(self, observation: Observation) -> None:
         with self._lock:
             self.observations.append(observation)
-            if self.log_path is not None:
-                with self.log_path.open("a") as handle:
-                    handle.write(
-                        f"{observation.timestamp}\t{observation.source}\t"
-                        f"{observation.payload.hex()}\n"
-                    )
+            self._log_line(
+                f"{observation.timestamp}\t{observation.source}\t"
+                f"{observation.payload.hex()}"
+            )
             self._lock.notify_all()
         for observe in self.observers:
             observe(observation)
