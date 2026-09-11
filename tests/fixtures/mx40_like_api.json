@@ -1,0 +1,459 @@
+{
+ "/api/v1/device": {
+  "__http_status__": 404
+ },
+ "/api/v1/device/audio": {
+  "__http_status__": 404
+ },
+ "/api/v1/device/cabinet": [
+  {
+   "brightness": 0.8,
+   "canvasID": 2048,
+   "colorTemperature": 6500,
+   "gain": {
+    "b": 43,
+    "g": 43,
+    "r": 43
+   },
+   "gamma": {
+    "b": 2.8,
+    "g": 2.8,
+    "r": 2.8
+   },
+   "id": 700000000000001,
+   "index": 0,
+   "indicatorLightState": true,
+   "moduleCount": 4,
+   "outputCardID": 8,
+   "outputID": 2048,
+   "outputIndex": 0,
+   "power": 12,
+   "resolution": {
+    "height": 128,
+    "width": 128
+   },
+   "rvCardName": "A5sPlus",
+   "shortName": "",
+   "size": {
+    "height": 500,
+    "width": 500
+   },
+   "voltage": 5
+  },
+  {
+   "brightness": 0.8,
+   "canvasID": 2048,
+   "colorTemperature": 6500,
+   "gain": {
+    "b": 43,
+    "g": 43,
+    "r": 43
+   },
+   "gamma": {
+    "b": 2.8,
+    "g": 2.8,
+    "r": 2.8
+   },
+   "id": 700000000000002,
+   "index": 1,
+   "indicatorLightState": true,
+   "moduleCount": 4,
+   "outputCardID": 8,
+   "outputID": 2048,
+   "outputIndex": 0,
+   "power": 12,
+   "resolution": {
+    "height": 128,
+    "width": 128
+   },
+   "rvCardName": "A5sPlus",
+   "shortName": "",
+   "size": {
+    "height": 500,
+    "width": 500
+   },
+   "voltage": 5
+  },
+  {
+   "brightness": 0.8,
+   "canvasID": 2048,
+   "colorTemperature": 6500,
+   "gain": {
+    "b": 43,
+    "g": 43,
+    "r": 43
+   },
+   "gamma": {
+    "b": 2.8,
+    "g": 2.8,
+    "r": 2.8
+   },
+   "id": 700000000000003,
+   "index": 2,
+   "indicatorLightState": true,
+   "moduleCount": 4,
+   "outputCardID": 8,
+   "outputID": 2048,
+   "outputIndex": 0,
+   "power": 12,
+   "resolution": {
+    "height": 128,
+    "width": 128
+   },
+   "rvCardName": "A5sPlus",
+   "shortName": "",
+   "size": {
+    "height": 500,
+    "width": 500
+   },
+   "voltage": 5
+  }
+ ],
+ "/api/v1/device/input/sources": [
+  {
+   "actualRefreshRate": 50,
+   "actualResolution": {
+    "height": 2160,
+    "width": 3840
+   },
+   "cardId": 0,
+   "colorSpace": "YCbCr 4:4:4",
+   "groupId": 25,
+   "id": 512,
+   "name": "HDMI 1",
+   "order": 0,
+   "port": 0,
+   "sourceStatus": 1,
+   "type": 3,
+   "usable": true
+  },
+  {
+   "actualRefreshRate": 60,
+   "actualResolution": {
+    "height": 3840,
+    "width": 3840
+   },
+   "cardId": 0,
+   "colorSpace": "RGB 4:4:4",
+   "groupId": 40,
+   "id": 768,
+   "name": "DP 1",
+   "order": 0,
+   "port": 0,
+   "sourceStatus": 0,
+   "type": 5,
+   "usable": true
+  }
+ ],
+ "/api/v1/device/monitor/info": {
+  "backupStatus": {
+   "errCode": 108,
+   "status": 0
+  },
+  "cabinets": [
+   {
+    "cabinetID": 0,
+    "canvasID": 0,
+    "index": 0,
+    "outPutID": 2048,
+    "outputCardID": 8,
+    "rvCardID": 0,
+    "rvCards": [
+     {
+      "backupStatus": {
+       "mode": 0,
+       "status": 0
+      },
+      "cabinetID": 700000000000001,
+      "cabinetIndex": 0,
+      "errorBit": [
+       {
+        "status": 1,
+        "type": 0,
+        "value": 65535
+       }
+      ],
+      "humidity": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 0
+      },
+      "moduleInfos": null,
+      "netPortIndex": 2048,
+      "nextCabinetLinkStatus": {
+       "linkStatus": true,
+       "status": 0
+      },
+      "runtime": 0,
+      "rvCardID": 700000000000001,
+      "temperature": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 39
+      },
+      "totalRuntime": 0,
+      "voltage": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 4.2
+      }
+     }
+    ],
+    "temperature": {
+     "name": "",
+     "nameEn": "",
+     "status": 0,
+     "value": 0
+    },
+    "voltage": {
+     "name": "",
+     "nameEn": "",
+     "status": 0,
+     "value": 0
+    }
+   },
+   {
+    "cabinetID": 0,
+    "canvasID": 0,
+    "index": 1,
+    "outPutID": 2048,
+    "outputCardID": 8,
+    "rvCardID": 0,
+    "rvCards": [
+     {
+      "backupStatus": {
+       "mode": 0,
+       "status": 0
+      },
+      "cabinetID": 700000000000002,
+      "cabinetIndex": 1,
+      "errorBit": [
+       {
+        "status": 1,
+        "type": 0,
+        "value": 65535
+       }
+      ],
+      "humidity": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 0
+      },
+      "moduleInfos": null,
+      "netPortIndex": 2048,
+      "nextCabinetLinkStatus": {
+       "linkStatus": true,
+       "status": 0
+      },
+      "runtime": 0,
+      "rvCardID": 700000000000002,
+      "temperature": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 41
+      },
+      "totalRuntime": 0,
+      "voltage": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 4.1
+      }
+     }
+    ],
+    "temperature": {
+     "name": "",
+     "nameEn": "",
+     "status": 0,
+     "value": 0
+    },
+    "voltage": {
+     "name": "",
+     "nameEn": "",
+     "status": 0,
+     "value": 0
+    }
+   },
+   {
+    "cabinetID": 0,
+    "canvasID": 0,
+    "index": 2,
+    "outPutID": 2048,
+    "outputCardID": 8,
+    "rvCardID": 0,
+    "rvCards": [
+     {
+      "backupStatus": {
+       "mode": 0,
+       "status": 0
+      },
+      "cabinetID": 700000000000003,
+      "cabinetIndex": 2,
+      "errorBit": [
+       {
+        "status": 1,
+        "type": 0,
+        "value": 65535
+       }
+      ],
+      "humidity": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 0
+      },
+      "moduleInfos": null,
+      "netPortIndex": 2048,
+      "nextCabinetLinkStatus": {
+       "linkStatus": false,
+       "status": 0
+      },
+      "runtime": 0,
+      "rvCardID": 700000000000003,
+      "temperature": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 37
+      },
+      "totalRuntime": 0,
+      "voltage": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 4.4
+      }
+     }
+    ],
+    "temperature": {
+     "name": "",
+     "nameEn": "",
+     "status": 0,
+     "value": 0
+    },
+    "voltage": {
+     "name": "",
+     "nameEn": "",
+     "status": 0,
+     "value": 0
+    }
+   }
+  ],
+  "cardMonitorInfo": null,
+  "controllerPortMonitorInfos": [
+   {
+    "controllerPortID": 0,
+    "status": 0
+   }
+  ],
+  "fanInfos": [
+   {
+    "fanName": "chassis Fan",
+    "fanNameEn": "",
+    "fanShowType": 0,
+    "fanSpeed": 1293,
+    "fanType": 0,
+    "status": 0
+   }
+  ],
+  "mainBoardTemperature": {
+   "name": "Main_board Temperature",
+   "nameEn": "",
+   "status": 0,
+   "value": 42
+  },
+  "mainBoardVoltage": {
+   "name": "Main_board Voltage",
+   "nameEn": "",
+   "status": 0,
+   "value": 11.45
+  },
+  "name": "MX40 Pro_000001",
+  "outputStatus": [
+   {
+    "outputCardID": 8,
+    "outputID": 2048,
+    "status": 0,
+    "type": 0
+   }
+  ],
+  "powerMonitorInfos": [
+   {
+    "powerID": 0,
+    "status": 0
+   }
+  ],
+  "runtime": 17160,
+  "rvCardsRuntime": [],
+  "screenSourceStatus": [
+   {
+    "inputCardID": 1,
+    "portID": 256,
+    "status": 0
+   }
+  ],
+  "temperatureInfos": null,
+  "totalRuntime": 986580,
+  "voltageInfos": null
+ },
+ "/api/v1/device/snmpstate": {
+  "state": false
+ },
+ "/api/v1/preset": {
+  "screenPresets": [
+   {
+    "presets": [
+     {
+      "effectSwitch": 0,
+      "name": "Preset A",
+      "outputData": false,
+      "presetUUID": "{p1}",
+      "processingData": false,
+      "screenData": true,
+      "sequenceNumber": 1,
+      "sourceData": true,
+      "state": true
+     }
+    ],
+    "screenID": "{00000000-0000-0000-0000-000000000001}"
+   }
+  ]
+ },
+ "/api/v1/screen": {
+  "screenGroups": [
+   {
+    "isShow": false,
+    "name": "Group",
+    "ordinal": 0,
+    "screenGroupID": "{g}"
+   }
+  ],
+  "screens": [
+   {
+    "canvases": [],
+    "createTime": "",
+    "inputPort": {},
+    "layersInWorkingMode": [],
+    "layoutMode": 0,
+    "lowLatency": false,
+    "masterFrameRate": 50,
+    "ordinal": 0,
+    "outputMode": 0,
+    "pageInfos": [],
+    "position": {},
+    "screenGroupID": "{g}",
+    "screenID": "{00000000-0000-0000-0000-000000000001}",
+    "screenIndex": 0,
+    "screenName": "Main",
+    "selectedPageID": 0,
+    "workingMode": 1
+   }
+  ]
+ },
+ "__about__": "The COEX HTTP API as OBSERVED on a NovaPro MX40 Pro running a live show, 2026-09-11: real response structure, synthetic values. Three cabinets stand in for 288. Endpoints marked __http_status__ 404 answered exactly that on the unit. displaymode and backup were not requested and are absent here. Generated from tests/conftest.py; tests/test_fixtures.py asserts they agree."
+}

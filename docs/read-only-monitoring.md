@@ -394,6 +394,14 @@ For a threshold: a one-degree flicker is noise on this hardware, so an alert on
 per-card temperature needs at least the two-degree hysteresis the application's
 `Thresholds` already enforce.
 
+**A machine-readable copy of these shapes is in
+[`tests/fixtures/mx40_like_api.json`](../tests/fixtures/mx40_like_api.json)** —
+one JSON object keyed by endpoint path, real structure, synthetic values, three
+cabinets standing in for 288, with the endpoints that answered HTTP 404 marked
+as such. A consumer in any language can serve it from a fake and see what its
+own parser makes of a real MX40 Pro before ever meeting one. It is generated
+from this repository's test fixtures and a test asserts the two agree.
+
 `MonitorSnapshot` folds these into `healthy`, `offline_cabinets`, `hottest`,
 `signal_present` and `display_mode`; `CabinetHealth` now carries `voltage` and
 `link_ok` as well. `interpret_monitor_info()` is the one, total interpreter for
