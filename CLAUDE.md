@@ -87,9 +87,13 @@ python -m novasun simulate coex                   # MX-class HTTP API
 ```
 
 A **NovaPro UHD Jr** has been on the bench since 2026-08-26, at `192.168.0.10`,
-driving 30 receiving cards across ports 0, 1, 2 and 4. It is the project's only
-hardware: everything COEX and everything VX4S is still document-and-simulator
-only. Findings confirmed on it are marked `OBSERVED` (see `registers.OBSERVED`
+driving 30 receiving cards across ports 0, 1, 2 and 4. An **MX40** on a
+live-show network has since been observed *passively* (2026-09-11): nothing has
+been sent to it, so everything COEX is still document-and-simulator only as far
+as reads go, and VX4S entirely so. **On a live show, never open a register-bus
+session to a COEX controller** — `identify`, `bringup`, `info` and `serve` all
+do, and the session is exclusive; only `listen`, `watch --once`,
+`survey --no-probe` and SNMP GET are safe there, and only with the operator's go. Findings confirmed on it are marked `OBSERVED` (see `registers.OBSERVED`
 and `registers.NOT_IMPLEMENTED`); `docs/sources.md` records what it can and
 cannot settle.
 

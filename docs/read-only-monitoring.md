@@ -53,11 +53,12 @@ attempting it. Polling with GET needs neither.
 
 ## 1. What can be learned with zero transmission?
 
-**Do controllers announce themselves unsolicited?** **UNKNOWN.** No document
-describes unsolicited announcement, and no published implementation listens for
-one — every client, including the most complete (`sarakusha/novastar`), sends
-`rqProMI:` and waits. Absence of evidence here is weak evidence: nobody has
-looked. Assume no announcement until a listener proves otherwise.
+**Do controllers announce themselves unsolicited?** **No — OBSERVED.** A
+passive listener on UDP 3800 sat for thirty minutes on a live-show network with
+an **MX40** on the same segment (L2 adjacency confirmed from the ARP table) and
+heard nothing from it. No document describes unsolicited announcement, no
+published implementation listens for one, and now a controller has been watched
+and did not make one. Scope: one model, one thirty-minute window.
 
 **Would a silent listener see the inventory when NovaLCT is running?**
 **Partly, and the crucial half is UNKNOWN.**
@@ -88,9 +89,23 @@ is on the network. Getting the inventory passively needs a port mirror, a tap,
 or a listener running on the same host as the control application. This was
 previously guessed at as "the likelier design"; it is now measured.
 
-**How long would a listener wait?** **UNKNOWN.** NovaLCT's discovery cadence is
-not documented, and it may only probe on user action rather than on a timer. If
-it is user-driven, passive discovery could wait indefinitely.
+**How long would a listener wait?** **Indefinitely — OBSERVED for VMP.** During
+that same thirty minutes VMP was running and operating the show, and nobody
+pressed search. The listener overheard **zero probes**. VMP does not discover on
+a timer; it probes only on user action. Passive discovery on a VMP-operated
+network therefore has nothing to overhear until an operator happens to press a
+button, which during a show they will not.
+
+NovaLCT's cadence is still **UNKNOWN** — it has not been watched — but the
+working assumption should now be the same, because that is what the one
+vendor tool observed actually did.
+
+**One caveat both findings share.** Broadcast filtering on the show switch was
+not ruled out: the ARP entry proves the Mac and the MX40 share a segment, not
+that broadcasts reach the Mac's port. The positive control is a packet capture
+showing *any* broadcast traffic (ARP requests will do) arriving during the
+window. It was not run — the show took precedence — so these two results are
+OBSERVED with that stated hole rather than OBSERVED clean.
 
 ### The middle option worth considering
 
@@ -118,8 +133,11 @@ print(inventory.summary())
 ```
 
 It reports the median probe interval and, if it sees probes but no replies, says
-so explicitly — that outcome *is* the answer to whether replies are unicast. One
-session with a controller and NovaLCT settles questions 1 and 2 together.
+so explicitly. It also writes a session record even when it hears nothing,
+because the first real run heard nothing for thirty minutes and that silence
+turned out to be the finding. Questions 1 and 2 have now been settled by it —
+against VMP and an MX40 rather than NovaLCT, and with the broadcast-filtering
+caveat above.
 
 ---
 
@@ -780,7 +798,7 @@ own, so it is usable from a read-only consumer that polls by other means.
 
 | Question | Answer |
 |---|---|
-| Passive inventory | **Settled: no.** Probes are visible, replies are **unicast to the requester** (OBSERVED, L2 and L3). A passive listener learns that a control app is scanning and how often, and nothing about what is on the network. An inventory needs a port mirror, a tap, or co-location with the control app |
+| Passive inventory | **Settled: no, on three independent counts.** Replies are **unicast to the requester** (OBSERVED, L2 and L3); the **MX40 never announces itself** (OBSERVED, 30 min); and **VMP does not probe on a timer** (OBSERVED, 30 min with VMP running and nobody searching). A passive listener on a VMP-operated show network hears *nothing at all* — not even that a control app exists. An inventory needs a port mirror, a tap, or co-location with the control app. Caveat: broadcast filtering on the switch was not excluded by a positive control |
 | Discovery destination | Send the **subnet broadcast**. The multicast group `224.224.125.119` went unanswered on a UHD Jr despite egressing correctly (OBSERVED) — do not rely on it |
 | `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
 | Trusting a register read | **Two OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring, and reads snap to field boundaries. Poison-test anything unverified |
