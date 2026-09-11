@@ -299,10 +299,19 @@ A flat register file would let per-cabinet addressing bugs pass unnoticed; this
 will not, which is the point.
 
 The COEX simulator holds real state: set the brightness and the next `GET`
-reflects it. Its response *shapes* are reconstructed from NovaStar's manual and
-from what published clients expect — confirm the exact field spellings against
-hardware before an application depends on them. Endpoints it does not implement
-answer `NotSupport` (code 6), which is also what real firmware does.
+reflects it. Its response *shapes* were originally reconstructed from NovaStar's
+manual and from what published clients expect, and **they were wrong on every
+endpoint** — cabinets and inputs are bare lists, not wrapped; there is no
+`connected`, no `online`, and no numeric temperature; presets are grouped per
+screen. A single read-only pass over a live **MX40 Pro** (2026-09-11) settled
+the real shapes, and the simulator now emits them by default, field for field —
+see [`read-only-monitoring.md`](read-only-monitoring.md#over-coex-http-get).
+
+Two documented endpoints, `/api/v1/device` and `/api/v1/device/audio`, answered
+a bare **HTTP 404** on that unit — not a `NotSupport` (code 6) envelope — and the
+simulator withholds them by default for the same reason. Whether an
+*undocumented* path draws code 6 is still **DERIVED** and unobserved. Scope: one
+unit, one firmware.
 
 ## Phasing
 

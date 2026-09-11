@@ -230,7 +230,16 @@ Each line is `timestamp<TAB>source<TAB>hex`. A single reply answers this.
 
 ## 3. Is COEX HTTP on 8001 safe to poll while VMP is connected?
 
-**REASONED: very probably yes for GET. Not verified.**
+**Yes for a single burst of GETs — OBSERVED once. Sustained polling is still
+REASONED.**
+
+On 2026-09-11 a read-only client issued the eight snapshot GETs — device,
+screens, cabinets, inputs, presets, monitor/info, audio, snmpstate — against an
+**MX40 Pro** that VMP was driving through a live show. All eight were answered in
+0.1 s total, about 680 KB, with no `Busying` and no visible effect on the show.
+Two answered HTTP 404 (`device`, `audio`), which is a firmware fact, not
+contention. That is one burst, not a polling regime: what a sustained cadence
+does to VMP is still not established, and the policy below stands.
 
 The evidence, and its limits:
 
@@ -323,21 +332,36 @@ published clients expect, and `coexsim.py` reproduces those shapes. Treat field
 spellings as provisional and code defensively; `monitor.py` does, leaving
 unrecognised fields `None` and keeping the raw payload on the snapshot.
 
-| Endpoint | Gives |
-|---|---|
-| `GET /api/v1/device` | model, name, serial, firmware, working mode |
-| `GET /api/v1/device/monitor/info` | per-cabinet temperature and online state, controller temperature, fan speed |
-| `GET /api/v1/device/cabinet` | cabinet list: id, screen, position, size, brightness |
-| `GET /api/v1/screen` | screens: id, name, dimensions, brightness, gamma, colour temperature |
-| `GET /api/v1/device/input/sources` | inputs: id, name, type, connected, resolution |
-| `GET /api/v1/device/screen/displaymode` | 0 normal, 1 blackout, 2 freeze |
-| `GET /api/v1/preset` | preset list and the active one |
-| `GET /api/v1/device/backup` | primary/backup status |
-| `GET /api/v1/device/multifunc-card/detailinfo` | multifunction card status |
-| `GET /api/v1/device/snmpstate` | whether SNMP is on — worth reading first |
+**Update, 2026-09-11 — the field names below are now OBSERVED** on one MX40 Pro,
+and the earlier table (kept for the record in the git history) was wrong on
+every row that named a field. `coexsim.py` now emits these shapes by default.
+
+| Endpoint | On an MX40 Pro | Confidence |
+|---|---|---|
+| `GET /api/v1/device` | **HTTP 404.** Identity comes from `monitor/info.name` instead: `"MX40 Pro_<digits>"` | OBSERVED |
+| `GET /api/v1/device/monitor/info` | `name`, `runtime`, `totalRuntime`; `mainBoardTemperature.value` (°C), `mainBoardVoltage.value` (V); `fanInfos[].fanSpeed` (rpm) and `.status`; `cabinets[]` — each with `rvCards[]` carrying `cabinetID`, `temperature.value`, `voltage.value`, `humidity`, `errorBit[]`, `nextCabinetLinkStatus.linkStatus`, runtimes; `controllerPortMonitorInfos[]`, `outputStatus[]`, `powerMonitorInfos[]`, `screenSourceStatus[]` with numeric `status` codes. 265 KB for 288 cabinets | OBSERVED (field names); `status` code meanings UNKNOWN |
+| `GET /api/v1/device/cabinet` | bare list: `id` (64-bit, matches `rvCards[].cabinetID`), `index`, `outputID`, `outputCardID`, `outputIndex`, `canvasID`, `brightness` **as a 0–1 fraction**, `gamma{r,g,b}`, `gain{r,g,b}`, `colorTemperature`, `resolution{}`, `size{}` (mm), `rvCardName`, `rvCardInfo{firmware, scanNumber, refreshRate, moduleResolution}`, `power`. No name, no online, no temperature. 342 KB for 288 | OBSERVED |
+| `GET /api/v1/screen` | `screens[]` with `screenID`, `screenName`, `workingMode`, `masterFrameRate`, `lowLatency`, `canvases`; and `screenGroups[]`. No screen-level brightness | OBSERVED |
+| `GET /api/v1/device/input/sources` | bare list: `id`, `name`, `type` (int code), `sourceStatus`, `usable`, `actualResolution{}`, `actualRefreshRate`, `colorSpace`, `defaultEDID{}`. **A disconnected input still reports a resolution** (the EDID default); `sourceStatus` is what distinguishes it — 1 on the inputs feeding the show, 0 elsewhere | OBSERVED; `sourceStatus`=signal REASONED |
+| `GET /api/v1/preset` | `screenPresets[]`, each `screenID` + `presets[]` with `presetUUID`, `name`, `sequenceNumber`, `state` (active) | OBSERVED |
+| `GET /api/v1/device/snmpstate` | `{"state": false}` — SNMP was **off** on the unit | OBSERVED |
+| `GET /api/v1/device/audio` | **HTTP 404** | OBSERVED |
+| `GET /api/v1/device/screen/displaymode`, `/backup`, `/multifunc-card/detailinfo` | not requested | as before |
+
+Three consequences for a consumer. **Cabinet health lives on the receiving card,
+not the cabinet:** `monitor/info.cabinets[].cabinetID` is always 0 and its
+top-level readings are 0; the join to `/device/cabinet` is `rvCards[].cabinetID`
+= `id` (288 of 288). **There is no online flag** — a cabinet present in
+`monitor/info` with a reporting card is the working definition of online
+(REASONED), and its absence is how "offline" is expressed. **Every reading is an
+object,** `{"name", "nameEn", "status", "value"}`, never a bare number; a reader
+that assumed otherwise crashed the application's refresh thread on first
+contact.
 
 `MonitorSnapshot` folds these into `healthy`, `offline_cabinets`, `hottest`,
-`signal_present` and `display_mode`.
+`signal_present` and `display_mode`; `CabinetHealth` now carries `voltage` and
+`link_ok` as well. `interpret_monitor_info()` is the one, total interpreter for
+the monitoring payload.
 
 ### Receiving cards over the register bus
 
@@ -802,8 +826,8 @@ own, so it is usable from a read-only consumer that polls by other means.
 | Discovery destination | Send the **subnet broadcast**. The multicast group `224.224.125.119` went unanswered on a UHD Jr despite egressing correctly (OBSERVED) — do not rely on it |
 | `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
 | Trusting a register read | **Two OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring, and reads snap to field boundaries. Poison-test anything unverified |
-| Polling 8001 with VMP attached | **Very probably safe for GET, unverified.** Use the read-only client, 10–30 s cadence, back off on code 5 |
-| Monitoring over GET | **Rich over SNMP** (official OIDs, incl. per-card status and per-input signal); **good over HTTP** with provisional field names; **nothing** on VX4S / UHD Jr without a control session |
+| Polling 8001 with VMP attached | **One burst of eight GETs is OBSERVED safe** — 0.1 s, no `Busying`, no effect on a live show. Sustained cadence still unverified: use the read-only client, 10–30 s, back off on code 5 |
+| Monitoring over GET | **Rich over HTTP, field names now OBSERVED** (§4): per-card temperature, voltage, link state and error bits; main-board temperature and voltage; fan rpm; per-input signal via `sourceStatus`. SNMP was **off** on the unit seen. **Nothing** on VX4S / UHD Jr without a control session |
 | Consuming it | `survey_network()` / `novasun survey --json`, `schema_version` 1. Leave `allow_register_bus` off |
 
 **Status of the first-day list.** Capturing an `rpProMI:` reply is **done** —

@@ -16,6 +16,12 @@ Client: [`../src/novasun/coex.py`](../src/novasun/coex.py).
 - Every response is `{"code": 0, "data": ..., "message": "Success"}`. Non-zero
   codes: `1` InvalidParam, `2` SendFailed, `3` InternalErr, `4` AnalysisFailed,
   `5` Busying, `6` NotSupport, `39` CfgFileNotExist, `41` NonStandardFileName.
+- **OBSERVED on an MX40 Pro (2026-09-11):** two documented GETs, `/api/v1/device`
+  and `/api/v1/device/audio`, answered a bare **HTTP 404** — no JSON envelope,
+  no code 6. Whether an undocumented path draws code 6 was not tested. The
+  response *shapes* of the six GETs that answered are recorded in
+  [`read-only-monitoring.md`](read-only-monitoring.md#over-coex-http-get) and
+  differ from what the manual and published clients led this project to expect.
 
 ```
 PUT http://192.168.1.10:8001/api/v1/device/screen/displaymode
@@ -87,7 +93,7 @@ useful core.
 | GET | `/api/v1/preset` | Preset list |
 | PUT | `/api/v1/preset/current/update` | Apply preset |
 | PUT | `/api/v1/preset/update` | Modify preset |
-| GET | `/api/v1/device` | Device information |
+| GET | `/api/v1/device` | Device information — **absent on MX40 Pro firmware (HTTP 404), OBSERVED**; use `monitor/info.name` |
 | GET | `/api/v1/device/monitor/info` | Real-time monitoring |
 | PUT | `/api/v1/device/hw/mode` | `0` send-only, `1` all-in-one |
 | GET/PUT | `/api/v1/device/hw/deviceengineeringdocdata` | Export / import project file |
@@ -114,8 +120,12 @@ mapping and scheduling.
 
 ## Caveats
 
-- Endpoint availability varies by model and firmware. `NotSupport` (code 6) is a
-  normal answer, not a failure of the client.
+- Endpoint availability varies by model and firmware. `NotSupport` (code 6) is
+  documented as the normal answer; a plain HTTP 404 is what an MX40 Pro
+  actually returned for two documented endpoints (OBSERVED). Handle both.
+- Two payloads are large: `/api/v1/device/cabinet` was 342 KB and
+  `/api/v1/device/monitor/info` 265 KB for 288 cabinets. A monitoring consumer
+  should poll `monitor/info` on its own cadence and the cabinet list rarely.
 - Nothing here is authenticated or rate-limited; a stray loop can hammer a live
   screen. Confirm the destructive calls in the UI.
 - Cabinet IDs are large integers tied to the current project; re-import a

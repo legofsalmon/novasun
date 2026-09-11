@@ -87,15 +87,26 @@ python -m novasun simulate coex                   # MX-class HTTP API
 ```
 
 A **NovaPro UHD Jr** has been on the bench since 2026-08-26, at `192.168.0.10`,
-driving 30 receiving cards across ports 0, 1, 2 and 4. An **MX40** on a
-live-show network has since been observed *passively* (2026-09-11): nothing has
-been sent to it, so everything COEX is still document-and-simulator only as far
-as reads go, and VX4S entirely so. **On a live show, never open a register-bus
-session to a COEX controller** — `identify`, `bringup`, `info` and `serve` all
-do, and the session is exclusive; only `listen`, `watch --once`,
-`survey --no-probe` and SNMP GET are safe there, and only with the operator's go. Findings confirmed on it are marked `OBSERVED` (see `registers.OBSERVED`
-and `registers.NOT_IMPLEMENTED`); `docs/sources.md` records what it can and
-cannot settle.
+driving 30 receiving cards across ports 0, 1, 2 and 4. Findings confirmed on it
+are marked `OBSERVED` (see `registers.OBSERVED` and `registers.NOT_IMPLEMENTED`);
+`docs/sources.md` records what it can and cannot settle.
+
+An **MX40 Pro** on a live-show network was listened to passively and then read
+**once** — a single burst of eight HTTP GETs through the read-only client
+(2026-09-11). That is the whole of this project's contact with COEX hardware,
+and it changed a lot: every response shape the simulator had guessed was wrong,
+`/api/v1/device` is absent (HTTP 404) on that firmware, SNMP was off, and the
+application both crashed on the real monitoring payload and would have opened
+register-bus sessions to the controller. All four are fixed; the simulator now
+emits the observed shapes by default. VX4S is still document-and-simulator only.
+
+**On a live show, never open a register-bus session to a COEX controller.** The
+session is exclusive and displaces the VMP session running the show. `bringup`
+and `info` open one unconditionally. `identify()` — and so `serve` and `status`
+— stops at the HTTP API once it has answered, but check that holds in the
+version you are running before trusting it near a live unit. `listen`,
+`watch --once`, `coex snapshot` and `survey --no-probe` are read-only by
+construction. Use those, and only with the operator's go.
 
 **Two firmware behaviours make naive register reads lie**, both OBSERVED and
 both silent — well-formed frames, `ack = SUCCEEDED`, no error:

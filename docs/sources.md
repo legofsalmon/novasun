@@ -48,7 +48,7 @@ Everything above is documentary. One physical source now exists:
 | Unit | Identified as | Available since |
 |---|---|---|
 | NovaPro UHD Jr | model ID `0x6205`, serial `16:04:11:00:c1:c9:2d:00`, discovery tail `App,0161` | 2026-08-26 |
-| MX40 (COEX) | `192.168.100.12`, MAC `54:b5:6c:27:9d:fb` (NovaStar OUI, from the ARP table) — **observed passively only**, on a live-show network with VMP operating it; nothing has been sent to it | 2026-09-11 |
+| MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **One read-only burst of eight HTTP GETs** was sent to it, nothing else; SNMP off; 288 cabinets on 6 outputs | 2026-09-11 |
 
 Driving 30 receiving cards (model `0x4506`, firmware `4.3.0.0`) across output
 ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
@@ -69,10 +69,13 @@ candidates are ruled out and the selection state was not found anywhere in the
 
 What it cannot settle: anything COEX, anything VX4S, and input values in general.
 
-The MX40 has so far settled exactly two things, both by listening: it does not
-announce itself on UDP 3800, and VMP does not probe on a timer. Everything the
-COEX HTTP API and SNMP map claim remains **unverified against hardware** until
-a read-only pass is run at a moment when the show can spare it.
+The MX40 Pro settled, by listening: it does not announce itself on UDP 3800,
+and VMP does not probe on a timer. By one read-only burst of eight GETs: the
+real response shapes of six endpoints (every field name this project had
+guessed was wrong), that two documented endpoints are absent (HTTP 404), that
+SNMP was off, and that a burst of GETs with VMP attached costs nothing
+visible. The SNMP OID map remains **unexercised** — it cannot be exercised
+read-only on a unit with SNMP disabled.
 
 Register addresses still marked `derived` in
 [`../src/novasun/registers.py`](../src/novasun/registers.py) come from decompiled
