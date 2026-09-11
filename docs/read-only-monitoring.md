@@ -401,6 +401,10 @@ cabinets standing in for 288, with the endpoints that answered HTTP 404 marked
 as such. A consumer in any language can serve it from a fake and see what its
 own parser makes of a real MX40 Pro before ever meeting one. It is generated
 from this repository's test fixtures and a test asserts the two agree.
+[`tests/fixtures/crewbox_harness.mts`](../tests/fixtures/crewbox_harness.mts)
+does exactly that for crewbox's own `CoexReader` — imports it, serves the
+fixture, polls twice, prints the grade — and it is how the false all-clear
+described above was measured rather than predicted.
 
 `MonitorSnapshot` folds these into `healthy`, `offline_cabinets`, `hottest`,
 `signal_present` and `display_mode`; `CabinetHealth` now carries `voltage` and
