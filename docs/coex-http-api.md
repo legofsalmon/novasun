@@ -126,6 +126,12 @@ mapping and scheduling.
 - Two payloads are large: `/api/v1/device/cabinet` was 342 KB and
   `/api/v1/device/monitor/info` 265 KB for 288 cabinets. A monitoring consumer
   should poll `monitor/info` on its own cadence and the cabinet list rarely.
+- **`monitor/info` lists cabinets in a different order on every call**
+  (OBSERVED: all 288 moved between two reads). Match them on
+  `rvCards[].cabinetID`, never on position. `coex diff` does; a naive diff of
+  two real snapshots reports ~2,000 changes that are not changes.
+- `runtime` and `totalRuntime` are seconds, advancing in 60-second steps
+  (OBSERVED over one 35-minute interval).
 - Nothing here is authenticated or rate-limited; a stray loop can hammer a live
   screen. Confirm the destructive calls in the UI.
 - Cabinet IDs are large integers tied to the current project; re-import a

@@ -366,6 +366,31 @@ object,** `{"name", "nameEn", "status", "value"}`, never a bare number; a reader
 that assumed otherwise crashed the application's refresh thread on first
 contact.
 
+**A fourth consequence, from a second snapshot 35 minutes later: `monitor/info`
+returns its cabinets in a different order on every call.** All 288 changed list
+position between the two reads, with the same ids and the same per-id
+attributes; `/api/v1/device/cabinet` kept a stable order, and
+`screenSourceStatus[]` reordered too. **Never trend or diff `monitor/info` by
+list index** — key everything on `rvCards[].cabinetID`. A positional comparison
+of the two snapshots reported 1,974 changes; keyed by id there were forty-one.
+`diff_snapshots` now aligns by identity for exactly this reason.
+
+What the same 35 minutes showed about *readings*, on a quiet wall (OBSERVED,
+one interval):
+
+| Reading | Behaviour over 35 min |
+|---|---|
+| `rvCards[].temperature.value` | integer °C; 41 of 288 cards moved, all by ±1; range 37–42 → 36–42 |
+| `rvCards[].voltage.value` | one decimal; 9 of 288 moved, all by ±0.1 |
+| `nextCabinetLinkStatus`, `errorBit` | unchanged on all 288 |
+| `mainBoardTemperature.value` | unchanged (42); `mainBoardVoltage.value` +0.06 |
+| `fanInfos[].fanSpeed` | +5 to +6 rpm |
+| `runtime`, `totalRuntime`, `rvCardsRuntime[].totalRuntime` | **seconds, at 60-second granularity**: +2040 over 2081 s of wall clock; every one of 289 values is a multiple of 60; per-card deltas exactly 2040 or 2100 |
+
+For a threshold: a one-degree flicker is noise on this hardware, so an alert on
+per-card temperature needs at least the two-degree hysteresis the application's
+`Thresholds` already enforce.
+
 `MonitorSnapshot` folds these into `healthy`, `offline_cabinets`, `hottest`,
 `signal_present` and `display_mode`; `CabinetHealth` now carries `voltage` and
 `link_ok` as well. `interpret_monitor_info()` is the one, total interpreter for

@@ -48,7 +48,7 @@ Everything above is documentary. One physical source now exists:
 | Unit | Identified as | Available since |
 |---|---|---|
 | NovaPro UHD Jr | model ID `0x6205`, serial `16:04:11:00:c1:c9:2d:00`, discovery tail `App,0161` | 2026-08-26 |
-| MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **One read-only burst of eight HTTP GETs** was sent to it, nothing else; SNMP off; 288 cabinets on 6 outputs | 2026-09-11 |
+| MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **Two read-only bursts of eight HTTP GETs**, 35 minutes apart, were sent to it, nothing else; SNMP off; 288 cabinets on 6 outputs | 2026-09-11 |
 
 Driving 30 receiving cards (model `0x4506`, firmware `4.3.0.0`) across output
 ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
@@ -74,7 +74,9 @@ and VMP does not probe on a timer. By one read-only burst of eight GETs: the
 real response shapes of six endpoints (every field name this project had
 guessed was wrong), that two documented endpoints are absent (HTTP 404), that
 SNMP was off, and that a burst of GETs with VMP attached costs nothing
-visible. The SNMP OID map remains **unexercised** — it cannot be exercised
+visible. A second burst 35 minutes later settled that `monitor/info` reorders
+its cabinets on every call, that runtimes are seconds at 60 s granularity, and
+what a quiet wall's readings do over half an hour (±1 °C, ±0.1 V). The SNMP OID map remains **unexercised** — it cannot be exercised
 read-only on a unit with SNMP disabled.
 
 Register addresses still marked `derived` in
