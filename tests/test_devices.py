@@ -84,6 +84,11 @@ class TestCoexClient:
         assert len(coex.presets()["screenPresets"][0]["presets"]) == 2
 
     def test_display_mode_round_trips(self, coex, coex_server) -> None:
+        # The GET of displaymode answers 404 on a real MX40 Pro (OBSERVED), so
+        # the simulator withholds it by default. This test is about the
+        # documented round trip, and opts the read-back in; whether the PUT
+        # exists on that firmware is still UNKNOWN.
+        coex_server.state.missing_endpoints.discard("/api/v1/device/screen/displaymode")
         coex.set_display_mode(1)
         assert coex_server.state.display_mode == 1
         assert coex.request("GET", "/api/v1/device/screen/displaymode")["value"] == 1

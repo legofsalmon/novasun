@@ -35,6 +35,10 @@ def test_the_absent_endpoints_are_marked_as_observed() -> None:
     assert api["/api/v1/device"] == {"__http_status__": 404}
     assert api["/api/v1/device/audio"] == {"__http_status__": 404}
     assert api["/api/v1/device/snmpstate"] == {"state": False}
+    assert api["/api/v1/device/screen/displaymode"] == {"__http_status__": 404}
+    assert api["/api/v1/device/backup"] == {"master": "", "backup": "", "masterName": "", "backupName": ""}
+    assert api["/api/v1/device/multifunc-card/detailinfo"] == []
+    assert api["/api/v1/device/hw/mode"] == {"mode": 3}
 
 
 def test_nothing_from_the_show_is_in_the_fixture() -> None:

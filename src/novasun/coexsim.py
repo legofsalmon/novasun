@@ -44,12 +44,19 @@ class CoexState:
     inputs: list[dict[str, Any]] = field(default_factory=list)
     requests: list[tuple[str, str, Any]] = field(default_factory=list)
     #: Documented endpoints this firmware answers with HTTP 404. OBSERVED on an
-    #: MX40 Pro: ``/api/v1/device`` and ``/api/v1/device/audio`` are in
-    #: NovaStar's manual and absent from the unit. The default models that unit,
-    #: so code that depends on either fails here rather than on site; a test
-    #: that wants them served clears this set.
+    #: MX40 Pro: ``/api/v1/device``, ``/api/v1/device/audio`` and the GET of
+    #: ``/api/v1/device/screen/displaymode`` are in NovaStar's manual and absent
+    #: from the unit. The default models that unit, so code that depends on any
+    #: of them fails here rather than on site; a test that wants one served
+    #: removes it from this set. Only GETs consult it: whether the PUT of
+    #: displaymode exists on that firmware is UNKNOWN, so the simulator still
+    #: accepts it.
     missing_endpoints: set[str] = field(
-        default_factory=lambda: {"/api/v1/device", "/api/v1/device/audio"}
+        default_factory=lambda: {
+            "/api/v1/device",
+            "/api/v1/device/audio",
+            "/api/v1/device/screen/displaymode",
+        }
     )
 
     def __post_init__(self) -> None:
@@ -374,6 +381,10 @@ GETS = {
     "/api/v1/device/monitor/info": _monitor_info,
     "/api/v1/device/screen/displaymode": _display_status,
     "/api/v1/device/audio": lambda state: {"volume": 50, "mute": False},
+    # OBSERVED on an MX40 Pro, post-show, GET only:
+    "/api/v1/device/backup": lambda state: {"master": "", "backup": "", "masterName": "", "backupName": ""},
+    "/api/v1/device/multifunc-card/detailinfo": lambda state: [],
+    "/api/v1/device/hw/mode": lambda state: {"mode": 3},  # value observed; meaning UNKNOWN
     "/api/v1/device/snmpstate": lambda state: {"state": False},  # OBSERVED key; false on the unit
 }
 

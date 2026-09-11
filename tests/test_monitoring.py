@@ -198,7 +198,11 @@ class TestCoexMonitor:
             snapshot = monitor.poll()
 
         assert snapshot.model == "MX40 Pro"
-        assert snapshot.display_mode == 0
+        # Display mode is not readable over HTTP on a real MX40 Pro (the GET
+        # answers 404, OBSERVED), and the simulator now says so by default: the
+        # field stays None and the endpoint is recorded, not raised.
+        assert snapshot.display_mode is None
+        assert "display_mode" in snapshot.errors
         assert len(snapshot.cabinets) == 8
         assert snapshot.healthy
         assert snapshot.hottest is not None
@@ -232,9 +236,13 @@ class TestCoexMonitor:
         monitor = CoexMonitor(host, port, interval=0.0)
         monitor.client  # noqa: B018 - constructed above
         snapshot = monitor.poll()
-        # The simulator does not implement /device/backup, so it answers
-        # NotSupport -- which must degrade the snapshot, not break the poll.
-        assert "backup" in snapshot.errors
+        # Two documented endpoints answer HTTP 404 on a real MX40 Pro
+        # (OBSERVED), and the simulator withholds them by default. Each must
+        # degrade the snapshot, not break the poll -- and /device/backup, once
+        # this test's example of an absent endpoint, turned out to exist.
+        assert "device" in snapshot.errors
+        assert "display_mode" in snapshot.errors
+        assert "backup" not in snapshot.errors
         assert snapshot.model == "MX40 Pro"
 
     def test_offline_cabinet_shows_up(self, server) -> None:

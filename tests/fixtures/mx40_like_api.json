@@ -5,6 +5,12 @@
  "/api/v1/device/audio": {
   "__http_status__": 404
  },
+ "/api/v1/device/backup": {
+  "backup": "",
+  "backupName": "",
+  "master": "",
+  "masterName": ""
+ },
  "/api/v1/device/cabinet": [
   {
    "brightness": 0.8,
@@ -109,6 +115,9 @@
    "voltage": 5
   }
  ],
+ "/api/v1/device/hw/mode": {
+  "mode": 3
+ },
  "/api/v1/device/input/sources": [
   {
    "actualRefreshRate": 50,
@@ -401,6 +410,10 @@
   "totalRuntime": 986580,
   "voltageInfos": null
  },
+ "/api/v1/device/multifunc-card/detailinfo": [],
+ "/api/v1/device/screen/displaymode": {
+  "__http_status__": 404
+ },
  "/api/v1/device/snmpstate": {
   "state": false
  },
@@ -455,5 +468,5 @@
    }
   ]
  },
- "__about__": "The COEX HTTP API as OBSERVED on a NovaPro MX40 Pro running a live show, 2026-09-11: real response structure, synthetic values. Three cabinets stand in for 288. Endpoints marked __http_status__ 404 answered exactly that on the unit. displaymode and backup were not requested and are absent here. Generated from tests/conftest.py; tests/test_fixtures.py asserts they agree."
+ "__about__": "The COEX HTTP API as OBSERVED on a NovaPro MX40 Pro running a live show, 2026-09-11: real response structure, synthetic values. Three cabinets stand in for 288. Endpoints marked __http_status__ 404 answered exactly that on the unit. displaymode answered 404 and backup, multifunc-card and hw/mode answered as shown, all read after the show. Generated from tests/conftest.py; tests/test_fixtures.py asserts they agree."
 }

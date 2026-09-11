@@ -194,7 +194,19 @@ shows it addressed to the requester's own MAC and IP. It took a packet capture
 rather than a second host, because the reply's destination address is in the
 frame.
 
-**A second finding from the same capture: this device ignores the multicast
+**The MX40 Pro does not answer the discovery probe at all — OBSERVED,
+2026-09-11, after the show.** Eight `rqProMI:` probes from the host that reads
+its HTTP API without difficulty — two each to its unicast address, the subnet
+broadcast, the multicast group (joined on the right interface) and the limited
+broadcast — over six seconds of listening drew **no reply**. The UHD Jr answers
+the same probe within milliseconds. So the NovaLCT-style discovery this
+repository and crewbox both implement **cannot find a COEX controller**, at
+least not this model on this firmware; how VMP finds one is **UNKNOWN**, and a
+consumer that needs to discover MX-class hardware must be told the address or
+find it some other way (the ARP table located this one, by NovaStar's
+`54:b5:6c` OUI). Scope: one unit, one firmware, one attempt of eight probes.
+
+**A second finding from the UHD Jr capture: that device ignores the multicast
 probe.** Probes were sent to the subnet broadcast, to the multicast group
 `224.224.125.119`, and unicast to the device, ~2 s apart. Broadcast and unicast
 each drew a reply within ~12 ms. The multicast probe drew nothing — and the
@@ -354,7 +366,10 @@ every row that named a field. `coexsim.py` now emits these shapes by default.
 | `GET /api/v1/preset` | `screenPresets[]`, each `screenID` + `presets[]` with `presetUUID`, `name`, `sequenceNumber`, `state` (active) | OBSERVED |
 | `GET /api/v1/device/snmpstate` | `{"state": false}` — SNMP was **off** on the unit | OBSERVED |
 | `GET /api/v1/device/audio` | **HTTP 404** | OBSERVED |
-| `GET /api/v1/device/screen/displaymode`, `/backup`, `/multifunc-card/detailinfo` | not requested | as before |
+| `GET /api/v1/device/screen/displaymode` | **HTTP 404** — a third absent documented endpoint; display mode is not readable over HTTP on this firmware | OBSERVED (post-show) |
+| `GET /api/v1/device/backup` | `{"master": "", "backup": "", "masterName": "", "backupName": ""}` — present, empty on a unit with no redundancy configured | OBSERVED |
+| `GET /api/v1/device/multifunc-card/detailinfo` | `[]` | OBSERVED |
+| `GET /api/v1/device/hw/mode` | `{"mode": 3}` — the manual documents this as a setter taking `0` send-only / `1` all-in-one; `3` is neither, meaning UNKNOWN | OBSERVED value, UNKNOWN meaning |
 
 Three consequences for a consumer. **Cabinet health lives on the receiving card,
 not the cabinet:** `monitor/info.cabinets[].cabinetID` is always 0 and its
@@ -512,6 +527,22 @@ laptop and watching the record:
 Resolution and refresh vary independently of each other, which is what
 establishes that these are four separate fields rather than one composite mode
 code.
+
+**What the end of the show settled, with no writes by this project.** A third
+snapshot five hours after the second found `sourceStatus` on one HDMI input
+gone from `1` to `0` with every other input unchanged — a source removed after
+the show — and `presets[].state` moved to a different preset. Both fields
+therefore move as the readings above assumed; `sourceStatus` = signal is now
+supported by a real transition rather than by one snapshot's pattern, though an
+attended unplug would still make it clean. Over the same five hours `runtime`
+advanced 17,880 s against 17,842 s of wall clock (seconds, at the 60 s
+granularity already noted), and the idle wall ran **31–36 °C** against
+**37–42 °C** mid-show, main board 37 °C against 42 °C — a six-degree show load,
+which is the kind of number a threshold should be set with in mind.
+
+**SNMP, from the wire.** With `snmpstate` reporting `false`, `snmpget` on v1
+and v2c with the default community drew no response at all — the agent is
+absent, not merely restricted. OBSERVED.
 
 So `+0x19` is the **nominal** rate in centihertz and `+0x08` the **measured**
 frame period in microseconds — 20000 us is exactly 1/50 s, and only `+0x08`
@@ -871,7 +902,7 @@ own, so it is usable from a read-only consumer that polls by other means.
 | Question | Answer |
 |---|---|
 | Passive inventory | **Settled: no, on three independent counts.** Replies are **unicast to the requester** (OBSERVED, L2 and L3); the **MX40 never announces itself** (OBSERVED, 30 min); and **VMP does not probe on a timer** (OBSERVED, 30 min with VMP running and nobody searching). A passive listener on a VMP-operated show network hears *nothing at all* — not even that a control app exists. An inventory needs a port mirror, a tap, or co-location with the control app. Caveat: broadcast filtering on the switch was not excluded by a positive control |
-| Discovery destination | Send the **subnet broadcast**. The multicast group `224.224.125.119` went unanswered on a UHD Jr despite egressing correctly (OBSERVED) — do not rely on it |
+| Discovery destination | Send the **subnet broadcast** for register-bus hardware; the multicast group went unanswered on a UHD Jr (OBSERVED). **An MX40 Pro answers no probe at all** (OBSERVED, eight probes, four destinations) — COEX units must be given their address; the probe cannot find them |
 | `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
 | Trusting a register read | **Two OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring, and reads snap to field boundaries. Poison-test anything unverified |
 | Polling 8001 with VMP attached | **One burst of eight GETs is OBSERVED safe** — 0.1 s, no `Busying`, no effect on a live show. Sustained cadence still unverified: use the read-only client, 10–30 s, back off on code 5 |

@@ -109,6 +109,9 @@ application both crashed on the real monitoring payload and would have opened
 register-bus sessions to the controller. All four are fixed; the simulator now
 emits the observed shapes by default. VX4S is still document-and-simulator only.
 
+**An MX40 Pro does not answer `rqProMI:` discovery at all** (OBSERVED), so
+`novasun discover` cannot find COEX hardware; it has to be given the address.
+
 **On a live show, never open a register-bus session to a COEX controller.** The
 session is exclusive and displaces the VMP session running the show. `bringup`
 and `info` open one unconditionally. `identify()` — and so `serve` and `status`

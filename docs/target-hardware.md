@@ -4,7 +4,7 @@ Ethernet control, three families, USB deferred to a later phase.
 
 | Target | Model ID | Family | Ports | Control path |
 |---|---|---|---|---|
-| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20 | HTTP JSON on 8001, register bus as fallback |
+| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20 | HTTP JSON on 8001, register bus as fallback. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro) — must be given its address |
 | **VX4S** (and VX4S-N) | `0x6107` / `0x612A` | Video processor | 4 | Register bus, TCP 5200 |
 | **NovaPro UHD Jr** | `0x6205` | Video processor | 16 | Register bus, TCP 5200 |
 

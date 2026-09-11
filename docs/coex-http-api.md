@@ -16,9 +16,15 @@ Client: [`../src/novasun/coex.py`](../src/novasun/coex.py).
 - Every response is `{"code": 0, "data": ..., "message": "Success"}`. Non-zero
   codes: `1` InvalidParam, `2` SendFailed, `3` InternalErr, `4` AnalysisFailed,
   `5` Busying, `6` NotSupport, `39` CfgFileNotExist, `41` NonStandardFileName.
-- **OBSERVED on an MX40 Pro (2026-09-11):** two documented GETs, `/api/v1/device`
-  and `/api/v1/device/audio`, answered a bare **HTTP 404** — no JSON envelope,
-  no code 6. Whether an undocumented path draws code 6 was not tested. The
+- **OBSERVED on an MX40 Pro (2026-09-11):** three documented GETs,
+  `/api/v1/device`, `/api/v1/device/audio` and
+  `/api/v1/device/screen/displaymode`, answered a bare **HTTP 404** — no JSON
+  envelope, no code 6. `/api/v1/device/backup`, `/multifunc-card/detailinfo`
+  and `/hw/mode` answered (the last reading `{"mode": 3}`, a value the manual
+  does not list).
+- **The unit does not answer `rqProMI:` discovery** on UDP 3800 — unicast,
+  broadcast or multicast (OBSERVED). A COEX controller has to be given its
+  address. Whether an undocumented path draws code 6 was not tested. The
   response *shapes* of the six GETs that answered are recorded in
   [`read-only-monitoring.md`](read-only-monitoring.md#over-coex-http-get) and
   differ from what the manual and published clients led this project to expect.
