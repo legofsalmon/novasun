@@ -49,6 +49,14 @@ a reporting target configured**, also a write. A strictly read-only tool cannot
 turn either on, and should surface "SNMP not enabled" as a state rather than
 attempting it. Polling with GET needs neither.
 
+**OBSERVED, 2026-09-11:** on the one COEX unit this project has read — an MX40
+Pro running a live show — `/api/v1/device/snmpstate` returned `{"state":
+false}`. SNMP was off, and a read-only consumer could not have turned it on. So
+the recommendation above is conditional on a precondition that did not hold on
+the first unit seen; in practice the HTTP GET path in §4 was the only
+monitoring available, which is why its field names being OBSERVED now matters
+more than the SNMP OID map, which remains unexercised.
+
 ---
 
 ## 1. What can be learned with zero transmission?
