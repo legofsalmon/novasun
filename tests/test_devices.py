@@ -145,6 +145,48 @@ class TestSnapshotDiff:
         assert len(result["screens"]["screens"]) == 1  # the sweep carried on
 
 
+class TestKeyedDiff:
+    """diff_snapshots aligns lists by identity, because the real unit reorders.
+
+    Two monitor/info snapshots of an MX40 Pro 35 minutes apart returned the same
+    288 cabinets in a completely different order. Positionally that is 1,974
+    spurious changes; by cabinet id it is forty-one flickers of one degree.
+    """
+
+    def test_a_reordered_list_with_one_real_change_reports_one_change(self) -> None:
+        import copy
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        before = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        after = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        after["cabinets"].reverse()                       # the order the unit chose this time
+        after["rvCardsRuntime"].reverse()
+        after["cabinets"][0]["rvCards"][0]["temperature"]["value"] += 1   # was cabinets[2] before
+        changes = diff_snapshots(before, after)
+        assert [(p, o, n) for p, o, n in changes] == [
+            ("cabinets[2].rvCards[0].temperature.value", 37, 38)
+        ]
+
+    def test_an_element_that_disappears_is_reported_as_absent_not_as_noise(self) -> None:
+        import copy
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        before = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        after = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        gone = after["cabinets"].pop(1)
+        after["cabinets"].reverse()
+        changes = diff_snapshots(before, after)
+        paths = [p for p, _o, _n in changes]
+        assert "cabinets[]" in paths                       # the count moved
+        assert ("cabinets[1]", before["cabinets"][1], "__absent__") in changes
+        assert not any(".rvCards[0].cabinetID" in p for p in paths)   # no id "changes"
+        assert gone["rvCards"][0]["cabinetID"] == before["cabinets"][1]["rvCards"][0]["cabinetID"]
+
+    def test_unkeyed_lists_still_diff_positionally(self) -> None:
+        assert diff_snapshots([1, 2, 3], [1, 9, 3]) == [("[1]", 2, 9)]
+        assert diff_snapshots({"a": [{"x": 1}, {"x": 1}]}, {"a": [{"x": 1}, {"x": 2}]}) == [("a[1].x", 1, 2)]
+
+
 class TestIdentify:
     def test_identifies_a_coex_controller_over_http(self, coex_server) -> None:
         """With /api/v1/device absent, as on a real MX40 Pro.
