@@ -10,6 +10,8 @@ from novasun.coexsim import CoexState, SimulatedCoexController
 from novasun.devices import Family, identify, profile_for
 from novasun.simulator import SimulatedController
 
+from conftest import closed_port
+
 
 class TestProfiles:
     def test_target_models_are_known(self) -> None:
@@ -69,7 +71,11 @@ def coex(coex_server):
 
 
 class TestCoexClient:
-    def test_reads_device_and_topology(self, coex) -> None:
+    def test_reads_device_and_topology(self, coex, coex_server) -> None:
+        # /api/v1/device is documented but absent from a real MX40 Pro, so the
+        # simulator withholds it by default; this test is about the documented
+        # API and opts back in.
+        coex_server.state.missing_endpoints.clear()
         assert coex.device_info()["model"] == "MX40 Pro"
         assert len(coex.screens()["screens"]) == 1
         assert len(coex.cabinets()["cabinets"]) == 8
@@ -124,13 +130,27 @@ class TestSnapshotDiff:
         )
 
     def test_snapshot_records_unsupported_endpoints_without_failing(self, coex) -> None:
-        result = snapshot(coex, {"nope": "/api/v1/does/not/exist", "device": "/api/v1/device"})
+        # Two kinds of absence, both OBSERVED-or-derived and both recorded rather
+        # than raised: an undocumented path (code 6, derived) and a documented
+        # endpoint the firmware answers with HTTP 404 (observed on an MX40 Pro).
+        result = snapshot(
+            coex,
+            {"nope": "/api/v1/does/not/exist", "device": "/api/v1/device",
+             "screens": "/api/v1/screen"},
+        )
         assert "__error__" in result["nope"]
-        assert result["device"]["model"] == "MX40 Pro"
+        assert "__error__" in result["device"]
+        assert "404" in result["device"]["__error__"]
+        assert len(result["screens"]["screens"]) == 1  # the sweep carried on
 
 
 class TestIdentify:
     def test_identifies_a_coex_controller_over_http(self, coex_server) -> None:
+        """With /api/v1/device absent, as on a real MX40 Pro.
+
+        Presence comes from /api/v1/screen and the model from monitor/info's
+        name field -- the only identity that firmware's HTTP API offers.
+        """
         host, port = coex_server.address
         identification = identify(host, timeout=2.0, http_port=port, control_port=port)
 
@@ -138,7 +158,53 @@ class TestIdentify:
         assert identification.profile.name == "MX40 Pro"
         assert identification.profile.family is Family.COEX
         assert identification.preferred_path == "http"
+        assert identification.device_name == "MX40 Pro_000001"
         assert "MX40 Pro" in identification.summary()
+
+    def test_a_coex_controller_never_gets_a_register_bus_session(self, coex_server) -> None:
+        """The register bus is exclusive; opening it displaces VMP mid-show.
+
+        An earlier identify() probed the bus after HTTP answered "because it is
+        useful to know". Pointing control_port at a register-bus simulator and
+        asserting it saw nothing pins that it no longer does.
+        """
+        bus = SimulatedController("127.0.0.1", 0, model_id=0x6205)
+        bus.serve_in_thread()
+        try:
+            host, http_port = coex_server.address
+            _host, bus_port = bus.address
+            identification = identify(host, timeout=2.0, http_port=http_port, control_port=bus_port)
+        finally:
+            bus.shutdown()
+            bus.server_close()
+        assert identification.reachable_http
+        assert not identification.reachable_register_bus
+        assert bus.log == [], "identify() opened a register-bus session to a COEX controller"
+
+    def test_the_register_bus_can_be_forbidden_outright(self) -> None:
+        """register_bus=False must hold even when HTTP is down."""
+        bus = SimulatedController("127.0.0.1", 0, model_id=0x6205)
+        bus.serve_in_thread()
+        try:
+            _host, bus_port = bus.address
+            identification = identify(
+                "127.0.0.1", timeout=1.0, http_port=closed_port(), control_port=bus_port,
+                register_bus=False,
+            )
+        finally:
+            bus.shutdown()
+            bus.server_close()
+        assert not identification.reachable_http
+        assert not identification.reachable_register_bus
+        assert bus.log == []
+
+    def test_device_info_is_still_used_when_the_firmware_serves_it(self, coex_server) -> None:
+        coex_server.state.missing_endpoints.clear()
+        host, port = coex_server.address
+        identification = identify(host, timeout=2.0, http_port=port, control_port=port)
+        assert identification.reachable_http
+        assert identification.profile.name == "MX40 Pro"
+        assert identification.details.get("sn") == "SIM-MX40-0001"
 
     def test_identifies_a_register_bus_processor(self) -> None:
         server = SimulatedController("127.0.0.1", 0, model_id=0x6205)

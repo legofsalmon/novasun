@@ -40,6 +40,17 @@ SECOND_BIND = SECOND_LOOPBACK or "127.0.0.1"
 SECOND_KEY = SECOND_LOOPBACK or "localhost"
 
 
+def closed_port() -> int:
+    """A TCP port on loopback that nothing is listening on right now.
+
+    Bind-then-release: the port is free at the moment of the call, which is
+    what a test that needs a refused connection wants.
+    """
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def host_key(server) -> str:
     """The address the application should use for ``server``.
 

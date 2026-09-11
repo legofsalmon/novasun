@@ -155,7 +155,9 @@ class TestReadOnlyClient:
     def test_get_works(self, server) -> None:
         host, port = server.address
         client = ReadOnlyCoexClient(host, port, timeout=2.0)
-        assert client.device_info()["model"] == "MX40 Pro"
+        # screens, not device_info: a real MX40 Pro serves the former and 404s
+        # the latter, and the simulator now says so by default.
+        assert len(client.screens()["screens"]) == 1
 
     def test_every_setter_is_blocked(self, server) -> None:
         """Blocking `request` closes all setters at once, present and future."""
@@ -209,6 +211,9 @@ class TestCoexMonitor:
         assert all(method == "GET" for method, _path, _body in server.state.requests)
 
     def test_slow_endpoints_are_cached_between_polls(self, server) -> None:
+        # This test is about caching, so every slow endpoint must actually
+        # answer; an endpoint that 404s is re-tried each poll by design.
+        server.state.missing_endpoints.clear()
         host, port = server.address
         with CoexMonitor(host, port, interval=0.0) as monitor:
             monitor.poll()

@@ -43,6 +43,14 @@ class CoexState:
     presets: list[dict[str, Any]] = field(default_factory=list)
     inputs: list[dict[str, Any]] = field(default_factory=list)
     requests: list[tuple[str, str, Any]] = field(default_factory=list)
+    #: Documented endpoints this firmware answers with HTTP 404. OBSERVED on an
+    #: MX40 Pro: ``/api/v1/device`` and ``/api/v1/device/audio`` are in
+    #: NovaStar's manual and absent from the unit. The default models that unit,
+    #: so code that depends on either fails here rather than on site; a test
+    #: that wants them served clears this set.
+    missing_endpoints: set[str] = field(
+        default_factory=lambda: {"/api/v1/device", "/api/v1/device/audio"}
+    )
 
     def __post_init__(self) -> None:
         if not self.screens:
@@ -125,9 +133,17 @@ class _Handler(BaseHTTPRequestHandler):
     def _invalid(self, why: str = "InvalidParam") -> None:
         self._send(1, why)
 
+    def _http_404(self) -> None:
+        """A bare HTTP 404, no JSON envelope -- what the real unit sent."""
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         path = self.path.split("?")[0].rstrip("/")
         self.state.requests.append(("GET", path, None))
+        if path in self.state.missing_endpoints:
+            return self._http_404()
         handler = GETS.get(path)
         if handler is None:
             return self._not_supported()
@@ -220,6 +236,8 @@ GETS = {
         "current": state.current_preset,
     },
     "/api/v1/device/monitor/info": lambda state: {
+        # OBSERVED: a real MX40 Pro names itself here as "<model>_<digits>".
+        "name": f"{state.model}_000001",
         "cabinets": [
             {"id": cabinet["id"], "temperature": cabinet["temperature"],
              "online": cabinet["online"], "voltage": 3.8}

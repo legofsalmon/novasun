@@ -232,6 +232,18 @@ def _interpret(snapshot: MonitorSnapshot) -> MonitorSnapshot:
         snapshot.device_name = device.get("name") or device.get("deviceName")
         snapshot.serial = device.get("sn") or device.get("serialNumber")
 
+    # OBSERVED on an MX40 Pro: /api/v1/device is absent (HTTP 404) and the only
+    # identity the API offers is monitor/info's name, "MX40 Pro_002198". The
+    # model is the recognised prefix; the whole string is the device name.
+    info = snapshot.raw.get("monitoring")
+    if isinstance(info, dict) and isinstance(info.get("name"), str) and info["name"]:
+        from .devices import coex_profile_for  # cheap: devices imports nothing heavy
+
+        snapshot.device_name = snapshot.device_name or info["name"]
+        if snapshot.model is None:
+            profile = coex_profile_for(info["name"])
+            snapshot.model = profile.name if profile.name.lower() in info["name"].lower() else None
+
     display = snapshot.raw.get("display_mode")
     if isinstance(display, dict) and isinstance(display.get("value"), int):
         snapshot.display_mode = display["value"]
