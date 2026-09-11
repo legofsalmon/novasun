@@ -78,8 +78,10 @@ class TestCoexClient:
         coex_server.state.missing_endpoints.clear()
         assert coex.device_info()["model"] == "MX40 Pro"
         assert len(coex.screens()["screens"]) == 1
-        assert len(coex.cabinets()["cabinets"]) == 8
-        assert len(coex.presets()["presets"]) == 2
+        # OBSERVED shapes: cabinets are a bare list; presets are grouped per
+        # screen under "screenPresets".
+        assert len(coex.cabinets()) == 8
+        assert len(coex.presets()["screenPresets"][0]["presets"]) == 2
 
     def test_display_mode_round_trips(self, coex, coex_server) -> None:
         coex.set_display_mode(1)
@@ -124,10 +126,9 @@ class TestSnapshotDiff:
         brightness = [path for path in changes if path.endswith("brightness")]
         assert brightness, changes
         assert all(changes[path] == (1.0, 0.5) for path in brightness)
-        # Exactly one cabinet moved, in each endpoint that lists cabinets.
-        assert len(brightness) == len(
-            [path for path in changes if "cabinets[0]" in path and "brightness" in path]
-        )
+        # Exactly one cabinet moved, and only the cabinet endpoint carries
+        # brightness -- monitor/info reports readings, not settings.
+        assert brightness == ["cabinets[0].brightness"]
 
     def test_snapshot_records_unsupported_endpoints_without_failing(self, coex) -> None:
         # Two kinds of absence, both OBSERVED-or-derived and both recorded rather

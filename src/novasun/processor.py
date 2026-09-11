@@ -59,6 +59,11 @@ class InputState:
     notes: str = ""
 
 
+#: COEX input "type" codes to connector names. REASONED from one MX40 Pro's
+#: own input names; display only, never used to select anything.
+COEX_INPUT_TYPES: dict[Any, str] = {3: "HDMI", 5: "DP", 9: "SDI", 224: "internal", 225: "OPT"}
+
+
 class Processor:
     """A connected NovaStar processor, driven through whichever path it speaks."""
 
@@ -138,16 +143,26 @@ class Processor:
     def _coex_inputs(self) -> list[InputState]:
         assert self.coex is not None
         payload = self.coex.input_sources()
+        # OBSERVED: a real MX40 Pro returns a bare list; the {"sources": [...]}
+        # wrapper was a guess that is still tolerated.
         sources = payload.get("sources", payload) if isinstance(payload, dict) else payload
         states: list[InputState] = []
         for source in sources or []:
+            if "connected" in source:
+                connected = source.get("connected")
+            elif "sourceStatus" in source:
+                # REASONED: 1 on the inputs feeding a live show, 0 on the rest.
+                connected = source.get("sourceStatus") == 1
+            else:
+                connected = None
+            kind = source.get("type")
             states.append(
                 InputState(
                     label=str(source.get("name") or source.get("id")),
-                    type=str(source.get("type") or "unknown"),
+                    type=str(COEX_INPUT_TYPES.get(kind, kind) or "unknown"),
                     switchable=True,
                     identifier=source.get("id"),
-                    connected=source.get("connected"),
+                    connected=connected,
                 )
             )
         return states
@@ -383,6 +398,22 @@ class Processor:
     def presets(self) -> list[dict[str, Any]]:
         if self.coex is not None:
             payload = self.coex.presets()
+            if isinstance(payload, dict) and "screenPresets" in payload:
+                # OBSERVED shape: presets grouped per screen, identified by a
+                # UUID, with "state" marking the active one.
+                return [
+                    {
+                        "id": preset.get("presetUUID"),
+                        "name": preset.get("name"),
+                        "index": preset.get("sequenceNumber"),
+                        "active": preset.get("state"),
+                        "screen": group.get("screenID"),
+                    }
+                    for group in payload.get("screenPresets") or []
+                    if isinstance(group, dict)
+                    for preset in group.get("presets") or []
+                    if isinstance(preset, dict)
+                ]
             return payload.get("presets", []) if isinstance(payload, dict) else payload
         if not self.profile.presets:
             raise NotSupported(f"{self.profile.name} has no preset support")
