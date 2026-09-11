@@ -120,8 +120,9 @@ version you are running before trusting it near a live unit. `listen`,
 `watch --once`, `coex snapshot` and `survey --no-probe` are read-only by
 construction. Use those, and only with the operator's go.
 
-**Two firmware behaviours make naive register reads lie**, both OBSERVED and
-both silent — well-formed frames, `ack = SUCCEEDED`, no error:
+**Four firmware behaviours make naive register reads lie**, all OBSERVED and
+all silent — well-formed frames, `ack = SUCCEEDED`, no error. The two that
+matter when probing:
 
 - **An unimplemented address returns the previous read's payload**, not zeros.
   A sequential sweep therefore reports nearly every address as a live register
@@ -133,6 +134,11 @@ both silent — well-formed frames, `ack = SUCCEEDED`, no error:
   returns that field's start. Reads at documented base addresses are fine, so
   this is a trap for probing, not a bug in normal use — but a block cannot be
   walked byte by byte.
+
+The other two bite in normal use: **a block must be read from its base in one
+request** (chunking a read corrupts it), and **the receiving-card monitoring
+block is exactly 0x100 bytes** (reads beyond it alias into another block). Both
+are traps 3 and 4 in `docs/read-only-monitoring.md` §5.
 
 Everything else is validated against vendor documents and the two simulators. When adding a
 protocol feature, add it to the relevant simulator too — otherwise it is

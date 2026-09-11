@@ -250,16 +250,48 @@ Each line is `timestamp<TAB>source<TAB>hex`. A single reply answers this.
 
 ## 3. Is COEX HTTP on 8001 safe to poll while VMP is connected?
 
-**Yes for a single burst of GETs — OBSERVED once. Sustained polling is still
-REASONED.**
+**Yes for a single burst of GETs mid-show, and yes for ten minutes at 1 Hz on
+the controller side — both OBSERVED. Whether a sustained cadence disturbs an
+operator mid-cue is still REASONED.**
 
 On 2026-09-11 a read-only client issued the eight snapshot GETs — device,
 screens, cabinets, inputs, presets, monitor/info, audio, snmpstate — against an
 **MX40 Pro** that VMP was driving through a live show. All eight were answered in
 0.1 s total, about 680 KB, with no `Busying` and no visible effect on the show.
 Two answered HTTP 404 (`device`, `audio`), which is a firmware fact, not
-contention. That is one burst, not a polling regime: what a sustained cadence
-does to VMP is still not established, and the policy below stands.
+contention.
+
+### Ten minutes at 1 Hz — OBSERVED, controller side
+
+Later the same day, after the show had ended and with the wall still lit, the
+read-only client polled the same unit at 1 Hz for ten minutes: three GETs per
+tick — `monitor/info` (the heaviest endpoint, 265 KB for 288 cabinets),
+`input/sources` and `backup` — with a 4 s timeout. The back-off never fired.
+
+| | |
+|---|---|
+| Ticks | 597 in 600 s; no tick overran its second |
+| Requests | 1,791 — **0 errors, 0 `Busying`, 0 timeouts** |
+| `monitor/info` latency | p50 48 ms, p95 58 ms, p99 64 ms, max 75 ms |
+| `input/sources` latency | p50 6 ms, max 10 ms |
+| `backup` latency | p50 4 ms, max 13 ms |
+| Drift | `monitor/info` p50 over the first 100 ticks 48 ms; over the last 100, 51 ms |
+
+The readings behaved throughout: hottest card 36 °C on every tick, main board
+36–37 °C, each fan within 25 rpm of where it started, and the input signal
+pattern and the cabinet count identical on all 597 ticks. `runtime` advanced by
+exactly 600 s in ten steps of 60, at intervals of 59.3–60.5 s of wall time — the
+60 s granularity inferred from two samples earlier in the day (§4) is now
+observed across ten consecutive steps.
+
+What this settles, and what it does not. The controller sustains 1 Hz reads of
+its heaviest endpoint for ten minutes with no errors, no contention signal and
+no latency growth — twenty times the cadence the policy below recommends. It
+does not settle the test as originally specified below: VMP was not being
+operated, and whether it was still attached to the controller after the show is
+UNKNOWN. So "1 Hz does not degrade the controller" is OBSERVED; "1 Hz does not
+disturb an operator mid-cue" remains REASONED, from the same four arguments as
+before, with the controller-side half of the question now removed.
 
 The evidence, and its limits:
 
@@ -277,9 +309,11 @@ The evidence, and its limits:
 - **There is no authentication and no session** (**OFFICIAL**), so there is
   nothing for a poller to hold or steal.
 
-What is not established: whether a GET can slow VMP's own operations, whether
-any GET has side effects despite the verb, and what rate the controller
-tolerates. None of that is documented.
+What is not established: whether a GET can slow VMP's own operations, and
+whether any GET has side effects despite the verb. Neither is documented. The
+rate the controller tolerates is now bounded from below rather than unknown: at
+least three GETs a second, one of them the 265 KB `monitor/info`, for ten
+minutes without complaint.
 
 ### Recommended polling policy
 
@@ -299,15 +333,18 @@ Implemented in [`../src/novasun/monitor.py`](../src/novasun/monitor.py):
 - **Degrade, never raise.** An endpoint the firmware does not implement lands in
   `snapshot.errors` and the rest of the poll completes.
 
-A suggested cadence: **status every 10–30 s, topology every few minutes.** That
-is far below anything likely to matter, and monitoring rarely needs faster.
+A suggested cadence: **status every 10–30 s, topology every few minutes.** The
+controller is now known to tolerate 1 Hz (above), so this margin is for the
+operator's software, not for the controller — and monitoring rarely needs
+faster.
 
-### Settling it in ten minutes
+### Settling the rest
 
-Have VMP connected and doing something visible — a preset recall, a brightness
-ramp. Run `CoexMonitor` at 1 Hz alongside. Watch for VMP stuttering, `Busying`
-responses, or a dropped VMP connection. If none appear in ten minutes at 1 Hz,
-polling at 0.05 Hz is not going to be the thing that breaks a show.
+The controller half is done (above). The VMP half needs a person at the wall:
+have VMP connected and doing something visible — a preset recall, a brightness
+ramp — and run `CoexMonitor` at 1 Hz alongside. Watch for VMP stuttering,
+`Busying` responses, or a dropped VMP connection. If none appear in ten minutes
+at 1 Hz, polling at 0.05 Hz is not going to be the thing that breaks a show.
 
 ---
 
@@ -591,12 +628,14 @@ the other.
 
 ---
 
-## 5. Two register-bus traps that make reads lie
+## 5. Four register-bus traps that make reads lie
 
-**OBSERVED on a NovaPro UHD Jr, reproduced across a power cycle.** Both of these
-contradict assumptions this project previously held in writing, and both matter
-to anyone who reads registers — including a read-only consumer, because *both
-are triggered by reads alone*. Neither produces an error. Both produce
+**OBSERVED on a NovaPro UHD Jr.** The first two were reproduced across a power
+cycle and contradict assumptions this project previously held in writing; the
+third and fourth turned up later in ordinary block reads, and one of them was
+already in this repository's code as a chunked read. All four matter to anyone
+who reads registers — including a read-only consumer, because *all are
+triggered by reads alone*. None produces an error. All produce
 plausible-looking wrong data.
 
 ### Trap 1: an unimplemented address returns the previous response
@@ -773,7 +812,7 @@ without committing to which axis is which.
 
 ### What a read-only consumer should take from this
 
-- Reading is still safe. Neither trap changes controller state; both are about
+- Reading is still safe. None of the four changes controller state; all are about
   believing the answer.
 - Do not treat "the read succeeded and returned non-zero" as evidence a register
   exists. It is not.
@@ -904,8 +943,8 @@ own, so it is usable from a read-only consumer that polls by other means.
 | Passive inventory | **Settled: no, on three independent counts.** Replies are **unicast to the requester** (OBSERVED, L2 and L3); the **MX40 never announces itself** (OBSERVED, 30 min); and **VMP does not probe on a timer** (OBSERVED, 30 min with VMP running and nobody searching). A passive listener on a VMP-operated show network hears *nothing at all* — not even that a control app exists. An inventory needs a port mirror, a tap, or co-location with the control app. Caveat: broadcast filtering on the switch was not excluded by a positive control |
 | Discovery destination | Send the **subnet broadcast** for register-bus hardware; the multicast group went unanswered on a UHD Jr (OBSERVED). **An MX40 Pro answers no probe at all** (OBSERVED, eight probes, four destinations) — COEX units must be given their address; the probe cannot find them |
 | `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
-| Trusting a register read | **Two OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring, and reads snap to field boundaries. Poison-test anything unverified |
-| Polling 8001 with VMP attached | **One burst of eight GETs is OBSERVED safe** — 0.1 s, no `Busying`, no effect on a live show. Sustained cadence still unverified: use the read-only client, 10–30 s, back off on code 5 |
+| Trusting a register read | **Four OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring; reads snap to field boundaries; a block must be read from its base in one request; and the receiving-card monitoring block is exactly 0x100 bytes, beyond which a read aliases into another block. Poison-test anything unverified, and never chunk a block read |
+| Polling 8001 with VMP attached | **One burst of eight GETs is OBSERVED safe mid-show** (0.1 s, no `Busying`, no effect on a live show) and **ten minutes at 1 Hz is OBSERVED clean on the controller side** (1,791 GETs after the show: 0 errors, 0 `Busying`, `monitor/info` p50 48 ms / p99 64 ms, no drift). Whether 1 Hz disturbs an operator mid-cue is still REASONED — VMP was not being driven, and its attachment after the show is UNKNOWN. Use the read-only client, 10–30 s, back off on code 5 |
 | Monitoring over GET | **Rich over HTTP, field names now OBSERVED** (§4): per-card temperature, voltage, link state and error bits; main-board temperature and voltage; fan rpm; per-input signal via `sourceStatus`. SNMP was **off** on the unit seen. **Nothing** on VX4S / UHD Jr without a control session |
 | Consuming it | `survey_network()` / `novasun survey --json`, `schema_version` 1. Leave `allow_register_bus` off |
 

@@ -307,11 +307,15 @@ screen. A single read-only pass over a live **MX40 Pro** (2026-09-11) settled
 the real shapes, and the simulator now emits them by default, field for field —
 see [`read-only-monitoring.md`](read-only-monitoring.md#over-coex-http-get).
 
-Two documented endpoints, `/api/v1/device` and `/api/v1/device/audio`, answered
-a bare **HTTP 404** on that unit — not a `NotSupport` (code 6) envelope — and the
+Three documented endpoints — `/api/v1/device`, `/api/v1/device/audio` and
+`/api/v1/device/screen/displaymode` — answered a bare **HTTP 404** on that unit,
+not a `NotSupport` (code 6) envelope, and the
 simulator withholds them by default for the same reason. Whether an
-*undocumented* path draws code 6 is still **DERIVED** and unobserved. Scope: one
-unit, one firmware.
+*undocumented* path draws code 6 is still **DERIVED** and unobserved. The same
+unit then sustained ten minutes of read-only polling at 1 Hz after the show —
+1,791 GETs, no error, no `Busying`, no latency drift (see
+[`read-only-monitoring.md`](read-only-monitoring.md) §3). Scope: one unit, one
+firmware.
 
 ## Phasing
 
