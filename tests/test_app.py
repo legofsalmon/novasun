@@ -539,3 +539,34 @@ class TestDeviceErrorsAreStatesNotCrashes:
         device = add_register_device(app, no_cards)
         for _ in range(3):
             assert device.refresh(force=True).reachability == Reachability.ONLINE.value
+
+
+class TestRealCoexMonitoringDoesNotCrashRefresh:
+    """The real MX40 Pro monitor/info shape once killed the refresh thread.
+
+    Its per-cabinet temperature is {"name", "status", "value"}, and the status
+    reader called max() over those dicts: TypeError, uncaught, thread dead, UI
+    frozen -- proven by feeding the captured payload to the reader offline. The
+    fixture here has the same structure and none of the values.
+    """
+
+    class _Stub:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def monitoring(self):
+            return self._payload
+
+    def test_status_is_read_not_raised(self, app) -> None:
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        device = app.add("127.0.0.1", control_port=closed_port(), http_port=closed_port())
+        status = device._read_status(self._Stub(MX40_LIKE_MONITOR_INFO))
+        assert status["cabinets_total"] == 3
+        assert status["cabinets_online"] == 3
+        assert status["temperature_c"] == 41
+
+    def test_a_shape_nobody_has_seen_is_a_state_not_a_crash(self, app) -> None:
+        device = app.add("127.0.0.1", control_port=closed_port(), http_port=closed_port())
+        status = device._read_status(self._Stub({"cabinets": [{"rvCards": [{"temperature": {"value": "hot"}}]}]}))
+        assert "temperature_c" not in status   # unreadable, and said so by omission

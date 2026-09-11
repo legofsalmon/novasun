@@ -258,16 +258,18 @@ class Device:
             status["voltage_v"] = monitoring.voltage_v
             status["humidity_percent"] = monitoring.humidity_percent
         elif isinstance(monitoring, dict):
-            cabinets = monitoring.get("cabinets") or []
-            temperatures = [
-                c.get("temperature") for c in cabinets if isinstance(c, dict) and c.get("temperature")
-            ]
-            status["cabinets_total"] = len(cabinets)
-            status["cabinets_online"] = len(
-                [c for c in cabinets if isinstance(c, dict) and c.get("online")]
-            )
-            if temperatures:
-                status["temperature_c"] = max(temperatures)
+            # One interpreter for the COEX payload, shared with the read-only
+            # monitor, and total by construction. The ad-hoc version this
+            # replaced called max() over the real MX40 Pro's temperature dicts,
+            # raised TypeError, and killed the refresh thread -- the second time
+            # an uncaught exception here froze the UI. Anything it still cannot
+            # make sense of is recorded as a state, never raised.
+            from ..monitor import interpret_monitor_info
+
+            try:
+                status.update(interpret_monitor_info(monitoring))
+            except (TypeError, ValueError, KeyError, AttributeError) as exc:
+                status["interpretation_error"] = str(exc)
         return status
 
     # --- control ------------------------------------------------------------

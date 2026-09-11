@@ -13,6 +13,8 @@ from novasun import snmp
 from novasun.coexsim import SimulatedCoexController
 from novasun.discovery import PROBE, REPLY_PREFIX, UDP_PORT
 from novasun.monitor import (
+    MonitorSnapshot,
+    _interpret,
     MONITORING_ENDPOINTS,
     CoexMonitor,
     RateLimiter,
@@ -244,6 +246,68 @@ class TestCoexMonitor:
         assert [c.identifier for c in snapshot.offline_cabinets] == [
             server.state.cabinets[3]["id"]
         ]
+
+
+class TestRealShapes:
+    """The parsers against the OBSERVED MX40 Pro response structure.
+
+    The fixtures in conftest.py reproduce the real nesting exactly and none of
+    the real values. Before this, _interpret joined monitor/info on an "id" key
+    that the real entries do not have, and yielded 288 cabinets with no
+    temperature and no online state.
+    """
+
+    def test_monitor_info_interprets_totally(self) -> None:
+        from conftest import MX40_LIKE_MONITOR_INFO
+        from novasun.monitor import interpret_monitor_info
+
+        status = interpret_monitor_info(MX40_LIKE_MONITOR_INFO)
+        assert status["cabinets_total"] == 3
+        assert status["cabinets_online"] == 3
+        assert status["temperature_c"] == 41          # hottest receiving card
+        assert status["main_board_temperature_c"] == 42
+        assert status["main_board_voltage_v"] == 11.45
+        assert status["links_ok"] == 2
+
+    def test_monitor_info_never_raises_on_nonsense(self) -> None:
+        from novasun.monitor import interpret_monitor_info
+
+        for junk in (None, 7, "x", [], {"cabinets": "no"}, {"cabinets": [{"rvCards": [{"temperature": "hot"}]}]},
+                     {"mainBoardTemperature": {"value": "warm"}}):
+            interpret_monitor_info(junk)  # must not raise
+
+    def test_interpret_joins_cabinets_to_their_receiving_cards(self) -> None:
+        from conftest import (MX40_LIKE_CABINETS, MX40_LIKE_INPUTS,
+                              MX40_LIKE_MONITOR_INFO, MX40_LIKE_SCREENS)
+
+        snapshot = _interpret(MonitorSnapshot(timestamp=0.0, raw={
+            "cabinets": MX40_LIKE_CABINETS, "monitoring": MX40_LIKE_MONITOR_INFO,
+            "inputs": MX40_LIKE_INPUTS, "screens": MX40_LIKE_SCREENS,
+        }))
+        assert len(snapshot.cabinets) == 3
+        assert [c.temperature for c in snapshot.cabinets] == [39, 41, 37]
+        assert [c.voltage for c in snapshot.cabinets] == [4.2, 4.1, 4.4]
+        assert [c.link_ok for c in snapshot.cabinets] == [True, True, False]
+        assert all(c.online for c in snapshot.cabinets)
+        assert snapshot.hottest.temperature == 41
+        assert snapshot.healthy
+        assert snapshot.signal_present == ["HDMI 1"]
+        assert snapshot.model == "MX40 Pro"
+        assert snapshot.device_name == "MX40 Pro_000001"
+        assert all(c.brightness == 0.8 for c in snapshot.cabinets)
+
+    def test_a_configured_cabinet_missing_from_monitoring_is_offline(self) -> None:
+        from conftest import MX40_LIKE_CABINETS, MX40_LIKE_MONITOR_INFO
+        import copy
+
+        info = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        del info["cabinets"][2]
+        snapshot = _interpret(MonitorSnapshot(timestamp=0.0, raw={
+            "cabinets": MX40_LIKE_CABINETS, "monitoring": info,
+        }))
+        assert [c.online for c in snapshot.cabinets] == [True, True, False]
+        assert not snapshot.healthy
+        assert len(snapshot.offline_cabinets) == 1
 
 
 class TestRateLimiter:
