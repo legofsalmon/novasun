@@ -143,12 +143,13 @@ emits the observed shapes by default. VX4S is still document-and-simulator only.
 `novasun discover` cannot find COEX hardware; it has to be given the address.
 
 **On a live show, never open a register-bus session to a COEX controller.** The
-session is exclusive and displaces the VMP session running the show. `bringup`
-and `info` open one unconditionally. `identify()` — and so `serve` and `status`
-— stops at the HTTP API once it has answered, but check that holds in the
-version you are running before trusting it near a live unit. `listen`,
-`watch --once`, `coex snapshot` and `survey --no-probe` are read-only by
-construction. Use those, and only with the operator's go.
+session is exclusive and displaces the VMP session running the show. `info`
+opens one unconditionally, and so does `bringup --register-bus`. `bringup`
+without it, and `identify()` — and so `serve` and `status` — stop at the HTTP
+API once it has answered, but check that holds in the version you are running
+before trusting it near a live unit. `listen`, `watch --once`,
+`coex snapshot` and `survey --no-probe` are read-only by construction. Use
+those, and only with the operator's go.
 
 **Four firmware behaviours make naive register reads lie**, all OBSERVED and
 all silent — well-formed frames, `ack = SUCCEEDED`, no error. The two that
