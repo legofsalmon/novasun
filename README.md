@@ -167,7 +167,12 @@ writing a guessed byte at a live screen. See
 
 ### Against real hardware
 
+Follow [`docs/hardware-session.md`](docs/hardware-session.md): read-only steps
+first, and only then, with the show over and someone watching the wall,
+
 ```bash
+python -m novasun bringup 192.168.1.40 --json bringup.json   # GETs only on COEX
+python -m novasun verify 192.168.1.40 --json verify.json     # writes; asks for NOT LIVE
 python -m novasun discover
 python -m novasun info 192.168.1.40
 python -m novasun read 192.168.1.40 0x02000001 1 --receiving-card

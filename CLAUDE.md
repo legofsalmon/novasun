@@ -65,6 +65,12 @@ If an operator is mid-show and you are unsure, the right answer is to capture
 nothing rather than to guess. The bench will still be there next week; the show
 will not.
 
+When hardware *is* available and the show is over, follow
+[`docs/hardware-session.md`](docs/hardware-session.md): it orders the steps
+read-only first, names what each one settles, and says where every finding is
+recorded. `novasun verify` is the guided write step; it refuses to start until
+an operator types `NOT LIVE`.
+
 ## Provenance discipline
 
 Every protocol fact in this repository carries where it came from. This is the

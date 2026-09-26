@@ -135,6 +135,19 @@ def cmd_bringup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Guided, eye-on-the-wall verification of display-mode and brightness claims."""
+    from .verify import format_report, run
+
+    result = run(args.host, port=args.port, timeout=args.timeout)
+    print()
+    print(format_report(result))
+    if args.json:
+        Path(args.json).write_text(json.dumps(result.to_dict(), indent=2) + "\n")
+        print(f"report written to {args.json}")
+    return 1 if result.aborted else 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run the application: state, HTTP API and browser UI."""
     from .app.server import serve
@@ -541,6 +554,15 @@ def build_parser() -> argparse.ArgumentParser:
         "session; avoid during a show)",
     )
     bringup.set_defaults(func=cmd_bringup)
+
+    verify_parser = sub.add_parser(
+        "verify",
+        help="WRITES display mode/brightness with an operator watching; not for a live show",
+    )
+    verify_parser.add_argument("host")
+    verify_parser.add_argument("--port", type=int, default=coex_module.DEFAULT_PORT)
+    verify_parser.add_argument("--json", help="write the observations as JSON")
+    verify_parser.set_defaults(func=cmd_verify)
 
     serve_parser = sub.add_parser("serve", help="run the application and its browser UI")
     serve_parser.add_argument("host", nargs="*", help="device addresses to load at start")
