@@ -128,9 +128,11 @@ observed shapes, with synthetic values, are `tests/fixtures/mx30_like_api.json`.
 Scope: one unit, one firmware.
 
 Later that afternoon, **with VMP closed and the operator's explicit go**, the
-same MX30 took this project's only COEX writes — 2 `colorBeacon` PUTs and 5
+same MX30 took this project's first COEX writes — 2 `colorBeacon` PUTs and 5
 `snmpstate` PUTs, SNMP left off — its first SNMP walk, and a register-bus
-probe. **SNMP turns on with `{"state": true}`; `{"value": true}` answers
+probe. With the operator then watching the chassis, nine more `colorBeacon`
+PUTs across three request bodies changed nothing visible: treat that endpoint
+as absent on this firmware (REASONED). **SNMP turns on with `{"state": true}`; `{"value": true}` answers
 Success and does nothing**, which is what `set_snmp` sent at the time, so read
 back after any PUT. SNMP gave model `MX30` and firmware `V1.5.1`, which HTTP
 does not; its quirks (no MIB-2 system group, x100 values (REASONED), bitmask

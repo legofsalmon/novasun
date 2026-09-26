@@ -459,7 +459,7 @@ class TestWrites:
         # Silent through the client: request() returns {} and the method None.
         assert client.identify_controller(True) is None
         assert client.request("PUT", BEACON, {"value": False}) == {}
-        # Whether the beacon lit is UNKNOWN, so nothing is modelled as changing.
+        # Nothing is modelled as changing: watched on the unit, no body lit anything.
         assert client.snmp_state() == {"state": False}
         assert [p for m, p, _b in mx30.state.requests if m == "PUT"] == [BEACON] * 4
 

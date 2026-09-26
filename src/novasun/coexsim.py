@@ -1023,10 +1023,11 @@ def _mx30_put_snmpstate(handler: _Handler, body: Any) -> None:
 def _mx30_put_color_beacon(handler: _Handler, body: Any) -> None:
     """PUT hw/colorBeacon: HTTP 200, no Content-Type, Content-Length 0.
 
-    OBSERVED for ``{"value": true}`` and ``{"value": false}`` on the MX30. It is
-    the reply that firmware gives GETs of absent endpoints; whether the
-    endpoint exists and whether the beacon lit are UNKNOWN, so no state is
-    modelled.
+    OBSERVED on the MX30 for ``{"value"}``, ``{"state"}`` and ``{"enable"}``
+    bodies, true and false alike. It is the reply that firmware gives GETs of
+    absent endpoints, and with the operator watching the chassis no body
+    changed anything visible (OBSERVED), so the endpoint is most likely absent
+    (REASONED) and no state is modelled.
     """
     handler._empty_200()
 

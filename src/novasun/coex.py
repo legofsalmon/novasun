@@ -344,11 +344,15 @@ class CoexClient:
         Content-Type, Content-Length 0 and no envelope -- the reply that firmware
         gives GETs of absent endpoints. :meth:`request` turns that into ``{}``, so
         this method returns without a word whatever happened. A PUT to a made-up
-        path was never tried, so the reply cannot tell whether the endpoint
-        exists; whether the beacon lit is UNKNOWN (nobody watched the chassis).
-        The ``{"value"}`` body is untested against alternatives -- the same
-        convention turned out to be ignored by ``snmpstate`` (see
-        :meth:`set_snmp`).
+        path was never tried, so the reply alone cannot tell whether the
+        endpoint exists. Later the same day, with the operator watching the
+        chassis -- front panel, LCD and status LEDs -- ``{"value": ...}``,
+        ``{"state": ...}`` and ``{"enable": ...}`` were each held true for 10 s
+        and then set false: all nine replies were that same empty 200 and
+        **nothing visible changed in any window** (OBSERVED). So on that firmware
+        this method does nothing anyone could see, and the endpoint is most
+        likely absent (REASONED); an indicator elsewhere or a body not tried is
+        not excluded. Do not offer it as a working "identify" control.
         """
         self.request("PUT", "/api/v1/device/hw/colorBeacon", {"value": bool(enabled)})
 

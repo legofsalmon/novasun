@@ -36,9 +36,9 @@ with the unit named:
   eight `rqProMI:` probes. In that pass: no TCP 5200, no PUT or POST, and
   whether VMP was still attached is **UNKNOWN**.
 - **The same MX30, 16:50Z–16:55Z, with VMP closed by the operator** and the
-  operator's explicit go for writes — the only session in this project that
-  has written to a COEX unit. Sent: **2 `PUT hw/colorBeacon` and 5
-  `PUT snmpstate`**, the only writes (SNMP was left off); 32 snapshot GETs
+  operator's explicit go for writes — the first session in this project to
+  write to a COEX unit. Sent: **2 `PUT hw/colorBeacon` and 5
+  `PUT snmpstate`**, the only writes in that session (SNMP was left off); 32 snapshot GETs
   through the read-only client and seven further `GET snmpstate` (a baseline,
   five read-backs, one during the register-bus probe); SNMP v2c
   with community `public` only — walks of the MIB-2 system group and of the
@@ -46,6 +46,10 @@ with the unit named:
   connects to 5200; one 20-byte register-bus read frame to UDP 5201. What it
   settled is in the SNMP recommendation below, §4's SNMP section and §4's
   register-bus note.
+- **The same MX30, 17:43Z–17:44Z, with the operator at the wall** watching the
+  chassis: nine `PUT hw/colorBeacon` across three request bodies, and nothing
+  else. Nothing visible changed (OBSERVED); the endpoint is most likely absent
+  on this firmware (REASONED). See `docs/coex-http-api.md`.
 
 An OBSERVED fact here is a fact about the unit named, not yet about the fleet.
 **Every MX30 statement below is scoped to that one unit, that firmware and that
