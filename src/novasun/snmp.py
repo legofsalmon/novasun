@@ -481,7 +481,15 @@ OBSERVED_UNDOCUMENTED_SUBTREES: tuple[str, ...] = (
     f"{CONTROLLER}.70",
     f"{ENTERPRISE}.10.200",
 )
-"""Further arcs the MX30 served: existence OBSERVED, meaning UNKNOWN."""
+"""Further arcs the MX30 served: existence OBSERVED, meaning UNKNOWN.
+
+Of these, ``…10.10.70.1.1`` and ``…10.10.70.1.2`` are the only enterprise values
+seen changing from walk to walk: over about four minutes of five-second walks
+on 2026-09-26 (17:50:00Z–17:53:58Z) they moved 43 and 16 times, within 3.3–7.7
+and 38.333–39.444, at the same rate before, during and after a front-panel
+freeze (OBSERVED). They are
+strings. What they measure is UNKNOWN; do not label them.
+"""
 
 
 PROVENANCE = (

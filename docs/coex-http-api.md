@@ -102,7 +102,7 @@ useful core.
 
 | Method | Path | Purpose |
 |---|---|---|
-| PUT | `/api/v1/device/screen/displaymode` | `0` normal, `1` blackout, `2` freeze. **Not readable back**: a GET drew HTTP 404 on the MX40 Pro and an empty 200 on the MX30 (OBSERVED, both) |
+| PUT | `/api/v1/device/screen/displaymode` | `0` normal, `1` blackout, `2` freeze. **Not readable back, by any route seen**: a front-panel freeze on the MX30 changed nothing on any HTTP endpoint or in SNMP (OBSERVED, attended, once). A GET drew HTTP 404 on the MX40 Pro and an empty 200 on the MX30 (OBSERVED, both) |
 | GET | `/api/v1/screen` | Screen list with IDs |
 | GET | `/api/v1/screen/cabinets` | Cabinets per screen — came back `{}` through the read-only client on the MX30; absent or empty, UNKNOWN which |
 | GET | `/api/v1/screen/cabinet/count` | `{"list": [{"ScreenID", "CabinetCount", "CabinetCountInBlackList"}]}` per screen — OBSERVED once, on the MX30 (72 and 0); never tried on the MX40 Pro |

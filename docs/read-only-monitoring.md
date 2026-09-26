@@ -50,6 +50,14 @@ with the unit named:
   chassis: nine `PUT hw/colorBeacon` across three request bodies, and nothing
   else. Nothing visible changed (OBSERVED); the endpoint is most likely absent
   on this firmware (REASONED). See `docs/coex-http-api.md`.
+- **The same MX30, 17:49:58Z–17:54Z, operator at the wall**, who froze the
+  wall from the front panel at about 17:50:30Z and unfroze it at about
+  17:51:00Z. Sent: one `PUT snmpstate {"state": true}` at the start and one
+  `{"state": false}` at the end; in between, read-only GETs once a second
+  (screen, input sources, monitor/info, displaymode, device/input, presets,
+  audio; the cabinet list every five seconds) and SNMP v2c walks, of the
+  screen arc each second and the whole enterprise arc every five. What it
+  settled is under "Display state" in §4.
 
 An OBSERVED fact here is a fact about the unit named, not yet about the fleet.
 **Every MX30 statement below is scoped to that one unit, that firmware and that
@@ -919,7 +927,7 @@ until that fix is in the version you run.
 | `GET /api/v1/preset` | same keys as the MX40 Pro; one screen, two presets, `state` false on both | OBSERVED |
 | `GET /api/v1/device/snmpstate` | `{"state": false}` — SNMP off on the second unit too, as found. Later, with VMP closed, `PUT {"state": true}` turned it on and this GET read `{"state": true}`; `PUT {"value": true}` answered Success and changed nothing (see the SNMP recommendation) | OBSERVED |
 | `GET /api/v1/device/audio` | **present**: `{"enable": false, "source": 65535, "sourceName": ""}` (HTTP 404 on the MX40 Pro) | OBSERVED |
-| `GET /api/v1/device/screen/displaymode` | **HTTP 200, empty body** — absent-or-empty (HTTP 404 on the MX40 Pro) | OBSERVED (`curl -i`) |
+| `GET /api/v1/device/screen/displaymode` | **HTTP 200, empty body** — absent-or-empty (HTTP 404 on the MX40 Pro). Unchanged through a front-panel freeze | OBSERVED (`curl -i`; attended freeze) |
 | `GET /api/v1/device/backup` | all four strings empty, as on the MX40 Pro | OBSERVED |
 | `GET /api/v1/device/multifunc-card/detailinfo` | `[]` — a genuine JSON body, so this firmware *can* say "nothing" with an envelope | OBSERVED |
 | `GET /api/v1/device/hw/mode` | `{"mode": 3}` — second unit, second model, same value; meaning still UNKNOWN | OBSERVED value, UNKNOWN meaning |
@@ -927,6 +935,24 @@ until that fix is in the version you run.
 | `GET /api/v1/device/input` | `inputPortConfig[]` (six entries, each with `modelId` 5138 and a per-port `hardwareID`) and `testPattern{mode, parameters, txColorSpaceType, txHDRType}`, ≈ 7.6 KB — first time exercised | OBSERVED |
 | `GET /api/v1/screen/cabinets`, `…/screen/properties`, `…/screen/displayeffect` | `{}` through the read-only client in 2.0–2.5 ms — consistent with an empty 200, not distinguishable by that client from an empty envelope | absent-or-empty, UNKNOWN which |
 | any unknown path | **HTTP 200, `Content-Length: 0`, no `Content-Type`** | OBSERVED (`curl -i`, three paths) |
+
+**Display state: a frozen wall is invisible — OBSERVED, attended,
+2026-09-26.** With the operator at the wall, the MX30 was frozen from its front
+panel for about 30 seconds (about 17:50:30Z to 17:51:00Z) while a read-only
+watcher diffed every HTTP endpoint above once a second (the cabinet list every
+five) and SNMP once a second for the screen arc and every five seconds for the
+whole enterprise arc. **Nothing moved at the freeze or the unfreeze.** The
+display-mode GET stayed an empty 200; screens, layers, inputs, monitor/info,
+presets and the SNMP screen arc were unchanged. Sensor readings, runtimes and
+fan speeds were excluded from the diff; apart from them, the only values that
+changed in the whole four-minute window were two undocumented SNMP strings
+under `…10.10.70.1`, which drifted at the same rate before, during and after
+the freeze. So **a monitor reading HTTP or SNMP cannot tell a frozen wall from
+a live one on this firmware**, and it has no way to show "frozen". Scope: one
+unit, one freeze, operator-timed to about a second; a blackout was not tried,
+so whether blackout is equally invisible is **UNKNOWN**. For a consumer:
+`survey`'s `status.display_mode` is `null` on COEX hardware and means
+*unknown*, never *normal*; do not render a null as "live".
 
 **`monitor/info` on the MX30, against the MX40 record.** The skeleton is the
 same; these are the differences and near-differences, each OBSERVED on the MX30
@@ -1635,6 +1661,7 @@ own, so it is usable from a read-only consumer that polls by other means.
 | Trusting a register read | **Four OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring; reads snap to field boundaries; a block must be read from its base in one request; and the receiving-card monitoring block is exactly 0x100 bytes, beyond which a read aliases into another block. Poison-test anything unverified, and never chunk a block read |
 | Polling 8001 with VMP attached | **One burst of eight GETs is OBSERVED safe mid-show** (0.1 s, no `Busying`, no effect on a live show) and **ten minutes at 1 Hz is OBSERVED clean on the controller side** (1,791 GETs after the show: 0 errors, 0 `Busying`, `monitor/info` p50 48 ms / p99 64 ms, no drift), **repeated for five minutes on an MX30** (900 GETs: 0 errors, 0 `Busying`, `monitor/info` p50 10.5 ms / p99 15.3 ms for 72 cabinets, no drift). Whether 1 Hz disturbs an operator mid-cue is still REASONED — VMP was not being driven, and its attachment after the show is UNKNOWN on both units. Use the read-only client, 10–30 s, back off on code 5 |
 | Monitoring over GET | **Rich over HTTP, field names now OBSERVED** (§4): per-card temperature, voltage, link state and error bits; main-board temperature and voltage; fan rpm; per-input signal via `sourceStatus`. On the MX30, `/api/v1/screen` adds cabinet positions (OBSERVED) and each layer's source (REASONED to be `groupId`, from one discriminating value; that it is the displayed input is REASONED too). SNMP was **off** on both COEX units as found; switched on once, on the MX30, it gave identity and per-port status (next row). **Nothing** on VX4S / UHD Jr without a control session |
+| Frozen or blacked-out wall | **Not observable on the MX30.** A 30-second front-panel freeze moved nothing on any HTTP endpoint or in the SNMP enterprise arc (OBSERVED, attended, once). The display-mode GET answers an empty 200 on the MX30 and 404 on the MX40 Pro. Blackout untried (UNKNOWN). Show display state as unknown, never as normal |
 | SNMP, exercised once | **One MX30, V1.5.1, VMP closed, v2c `public`** (§4, OBSERVED): 170 values; model `"MX30"` and firmware `"V1.5.1"` — **the only surface seen that gives either**; 44 of 46 transcribed OIDs served. Handle before displaying: the **MIB-2 system group is absent** (`sysDescr` → `noSuchName`; probe with an enterprise OID); temperature, voltage and frame rates **x100** (REASONED); slot, Ethernet and receiving-card statuses are **64-bit bitmasks**, receiving-card status **one mask per port**, the documented per-card `.M` OIDs absent (bit readings REASONED); `"ERROR: ..."` **strings** where numbers belong, including `RECEIVING_CARDS_ONLINE` on empty ports; input types are strings with a trailing space; the internal source is missing; card names are empty strings; **`CONTROLLER_ROLE` 1 on a standalone unit — never show "backup" from it**. The walk, synthetic identifiers, is `tests/fixtures/mx30_snmp_walk.json` |
 | crewbox's SNMP reader | **REASONED from its code at `7c8cf6a`, never run against hardware — handoff items:** it would show **"3100°C"** and grade `warn` (no x100 scaling); label the unit a **backup** (`role === 1`); possibly lose the **whole identity round** if the firmware encodes the Counter64 `OUTPUT_SLOT_STATUS` in nine BER bytes (`integer too wide`, swallowed as "not ours") — the encoding is UNKNOWN; and ask per-card `.M` OIDs that were absent from the walk, which, if answered like `sysDescr`, show all 72 cabinets online with no status. The `ERROR:` port string is handled correctly |
 | Enabling SNMP | **A write, so never crewbox's.** `PUT /api/v1/device/snmpstate` takes **`{"state": true}`** (OBSERVED, twice each way, read back); **`{"value": true}` answers a Success envelope and changes nothing** (OBSERVED once) — so a Success on a PUT is not confirmation; read back (REASONED). `GET snmpstate` agreed with the agent in every observed check. Both COEX units were found with SNMP off, and the MX30 was left off |
