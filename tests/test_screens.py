@@ -15,6 +15,8 @@ from novasun.protocol import IO, Target
 from novasun.registers import GLOBAL_BRIGHTNESS, KILL_MODE, brightness_byte
 from novasun.simulator import SimulatedController
 
+from conftest import SECOND_BIND, SECOND_KEY, host_key
+
 VX4S = 0x6107
 UHD_JR = 0x6205
 
@@ -36,7 +38,10 @@ def vx4s():
 
 @pytest.fixture()
 def second():
-    server = SimulatedController("127.0.0.2", 0, model_id=VX4S, cards_per_port=2)
+    # A second address for a screen that spans two processors; see
+    # tests/conftest.py for why it is not hard-coded.
+    server = SimulatedController(SECOND_BIND, 0, model_id=VX4S, cards_per_port=2)
+    server.key_host = SECOND_KEY
     server.serve_in_thread()
     yield server
     server.shutdown()
@@ -53,8 +58,8 @@ def app(tmp_path):
 
 
 def add(app, server):
-    host, port = server.address
-    return app.add(host, control_port=port, http_port=closed_port())
+    _host, port = server.address
+    return app.add(host_key(server), control_port=port, http_port=closed_port())
 
 
 class TestScreenModel:

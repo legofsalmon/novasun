@@ -84,10 +84,25 @@ header│  │  │  │  │  port  rcv io reserved addr  len data checksum
 Three consequences follow, and they shape any application built on this:
 
 **It is trivially extensible and completely undiscoverable.** There is no
-enumeration, no capability query, no error for reading a register that does not
-exist — unknown addresses generally read back as zeros. Everything depends on
-knowing addresses. That is why the address map, not the framing, is the real
-asset.
+enumeration, no capability query, and no error for reading a register that does
+not exist. Everything depends on knowing addresses. That is why the address map,
+not the framing, is the real asset.
+
+An earlier version of this paragraph added "unknown addresses generally read
+back as zeros". **That is withdrawn: it is wrong, and it is dangerously wrong.**
+On a NovaPro UHD Jr, reading an unimplemented address returns *the previous
+read's payload* from an uncleared response buffer, in a well-formed frame with
+`ack = SUCCEEDED`. A naive sequential sweep therefore reports nearly every
+address as a live register holding plausible data. The behaviour, the
+poison-read discriminator that defeats it, and a second finding — that reads
+**snap to field boundaries**, so an offset into a multi-byte field silently
+returns that field's start — are documented in
+[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie).
+Both are **OBSERVED**, reproduced across a power cycle.
+
+This is the clearest illustration so far of why this repository tracks
+provenance: the zeros claim was a REASONED inference that read like a fact for
+several commits, and the first hour with hardware disproved it.
 
 **Broadcast is built into the addressing.** Port `0xFF` and receiving-card index
 `0xFFFF` mean "every card", which is how a screen-wide brightness change is a
@@ -265,12 +280,14 @@ hardware, and they cannot break anything.
 
 The decode work is essentially done; the open questions all need hardware:
 
-1. Confirm discovery against a real controller and capture a full `rpProMI:`
-   reply. What follows the prefix is **unknown** — no document describes it and
-   published clients discard it. (An earlier draft of this section said it
-   "appears to carry model and name information"; that was inference, not
-   evidence, and is withdrawn. See
-   [`read-only-monitoring.md`](read-only-monitoring.md#2-decoding-the-rppromi-reply).)
+1. ~~Confirm discovery against a real controller and capture a full `rpProMI:`
+   reply.~~ **Done.** A UHD Jr answers `rpProMI:App,0161` — a 16-byte reply
+   whose 8-byte tail is ASCII and carries **neither a model ID nor a device
+   name**. The earlier "appears to carry model and name information" draft was
+   both unevidenced and, as it turns out, wrong. Identification must come from
+   the register bus. Still open: whether the reply is unicast or broadcast,
+   which needs a second listening host. See
+   [`read-only-monitoring.md`](read-only-monitoring.md#2-decoding-the-rppromi-reply).
 2. Verify the address map per model, starting with the read-only registers —
    model ID, serial, name, monitoring block — then brightness read-back.
 3. Establish input-source numbering for each processor you care about, since it

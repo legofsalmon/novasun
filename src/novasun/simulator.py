@@ -85,6 +85,33 @@ def _sending_card_state(profile: DeviceProfile, name: str) -> RegisterFile:
     if profile.display.is_processor_level:
         assert profile.display.register is not None
         state.write_uint(profile.display.register, profile.display.normal, 1)
+    # A video-source record array, so the connector-signal decode is testable
+    # without hardware. Modelled on a real UHD Jr: an ascending index per
+    # record, one connector carrying a signal and the rest idle, and a trailing
+    # record reporting the output canvas rather than an input.
+    for index in range(reg.VIDEO_SOURCE_INPUT_RECORDS + 1):
+        record = bytearray(reg.VIDEO_SOURCE_RECORD_SIZE)
+        record[reg.VSR_INDEX] = index
+        if index == 1:                      # one connector with a source on it
+            record[reg.VSR_WIDTH:reg.VSR_WIDTH + 2] = (1920).to_bytes(2, "little")
+            record[reg.VSR_HEIGHT:reg.VSR_HEIGHT + 2] = (1080).to_bytes(2, "little")
+            record[reg.VSR_FRAME_PERIOD_US:reg.VSR_FRAME_PERIOD_US + 2] = (
+                (16666).to_bytes(2, "little"))
+            record[reg.VSR_REFRESH_CHZ:reg.VSR_REFRESH_CHZ + 2] = (
+                (6000).to_bytes(2, "little"))
+        elif index == reg.VIDEO_SOURCE_INPUT_RECORDS:   # the output canvas
+            record[reg.VSR_WIDTH:reg.VSR_WIDTH + 2] = (3840).to_bytes(2, "little")
+            record[reg.VSR_HEIGHT:reg.VSR_HEIGHT + 2] = (2160).to_bytes(2, "little")
+        state.write(reg.VIDEO_SOURCE_STATE + index * reg.VIDEO_SOURCE_RECORD_SIZE,
+                    bytes(record))
+    # Past the end of the array the index byte stops ascending, which is what
+    # terminates enumeration on real hardware.
+    state.write(
+        reg.VIDEO_SOURCE_STATE
+        + (reg.VIDEO_SOURCE_INPUT_RECORDS + 1) * reg.VIDEO_SOURCE_RECORD_SIZE,
+        bytes([0x7F] * reg.VIDEO_SOURCE_RECORD_SIZE),
+    )
+
     label = name.encode()[:64]
     block = bytearray(88)
     block[0] = 0xA8
@@ -155,6 +182,7 @@ class SimulatedController(socketserver.ThreadingTCPServer):
         chain_index: int = 0,
         latency: float = 0.0,
         name: str | None = None,
+        unimplemented: tuple[tuple[int, int], ...] = (),
     ) -> None:
         super().__init__((host, port), _Handler)
         self.profile = profile_for(model_id)
@@ -165,6 +193,22 @@ class SimulatedController(socketserver.ThreadingTCPServer):
         self.name = name or f"Simulated {self.profile.name}"
         self.sender = _sending_card_state(self.profile, self.name)
         self.card_model_id = card_model_id
+        # Address ranges the firmware does not back, as (start, length).
+        #
+        # Real hardware does not answer these with zeros and does not raise an
+        # error: it returns the payload of the previous read, out of a response
+        # buffer it never clears. That is OBSERVED on a NovaPro UHD Jr, and it
+        # is modelled here because it is the difference between "this register
+        # exists" and "this register appears to exist", which is a distinction a
+        # register sweep cannot otherwise make. See registers.py.
+        #
+        # A sparse RegisterFile cannot express it on its own: an unset address
+        # there reads zero, which is also what a real, implemented, zero-valued
+        # register does. So the unbacked ranges are declared rather than
+        # inferred.
+        self.unimplemented = unimplemented
+        self._response_buffer = b""
+
         self.cards: dict[tuple[int, int], RegisterFile] = {
             (port, index): _receiving_card_state(port, index, card_model_id)
             for port in range(self.port_count)
@@ -223,9 +267,21 @@ class SimulatedController(socketserver.ThreadingTCPServer):
             if (port, index) in self.cards
         ]
 
+    def _is_unimplemented(self, address: int, length: int) -> bool:
+        return any(
+            address >= start and address + length <= start + size
+            for start, size in self.unimplemented
+        )
+
     def _access(self, packet: Packet, targets: list[RegisterFile]) -> bytes | ErrorType:
         if packet.io == 0:  # read: answer from the first matching target
-            return targets[0].read(packet.address, packet.length)
+            if self._is_unimplemented(packet.address, packet.length):
+                # Echo the last payload, padded, exactly as the hardware does.
+                stale = self._response_buffer[: packet.length]
+                return stale + bytes(packet.length - len(stale))
+            data = targets[0].read(packet.address, packet.length)
+            self._response_buffer = data
+            return data
         for target in targets:  # write: applies to every matching target
             target.write(packet.address, packet.data)
         return ErrorType.SUCCEEDED

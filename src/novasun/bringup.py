@@ -40,6 +40,27 @@ INPUT_REGISTER_CANDIDATES = {
     "NovaPro HD 0x02200022": INPUT_REGISTER_NOVAPRO_HD,
 }
 
+#: Addresses read immediately before a candidate, to fill the response buffer
+#: with a known value and so detect the stale-buffer behaviour described in
+#: :mod:`novasun.registers`.
+#:
+#: Each is read at the *candidate's* length rather than at a length of its own.
+#: Fixing the poison lengths instead looks simpler and is wrong twice over: a
+#: poison shorter than the candidate cannot be compared without assuming how the
+#: device pads the remainder, and discarding those leaves a long candidate with
+#: no usable trials at all -- which reports as "unreadable" and reads like a
+#: device refusing, when nothing of the sort happened.
+#:
+#: Several sources, because a candidate whose genuine value coincides with one
+#: poison is misclassified by a single-poison test. They are chosen to stay
+#: mutually distinct on the simulator as well as on hardware.
+POISON_SOURCES: tuple[int, ...] = (
+    0x0000_0000,             # hardware: 09 36 05 62 ...
+    reg.CONTROLLER_SN_HIGH,  # hardware: the serial
+    reg.SOFTWARE_SPACE,      # hardware: 4e 53 53 44 ("NSSD")
+    reg.DEVICE_NAME_SPACE,   # simulator: 0xA8 marker and the device name
+)
+
 #: Read-only registers worth capturing verbatim for later analysis.
 RAW_READS = {
     "device_type_0x00000002": (reg.CONTROLLER_MODEL_ID, 2),
@@ -191,12 +212,85 @@ def _safe_read(controller: Controller, address: int, length: int, target: Target
         return f"<{type(exc).__name__}: {exc}>"
 
 
+def _read_bytes(
+    controller: Controller, address: int, length: int, target: Target
+) -> bytes | None:
+    try:
+        return controller.read(address, length, target)
+    except (DeviceError, ProtocolError, TimeoutError, OSError):
+        return None
+
+
+def _classify_register(
+    controller: Controller, address: int, length: int, target: Target
+) -> dict[str, Any]:
+    """Decide whether ``address`` is backed by storage, or echoing the buffer.
+
+    An address this firmware does not implement does not error and does not read
+    zero: it returns the previous read's payload. So "it read back a plausible
+    value" is not evidence a register exists. Poison the buffer with a known
+    value first, and repeat with several different poisons -- a candidate whose
+    real value happens to equal one poison would otherwise look unimplemented.
+
+    Reads only. Safe against a live screen.
+    """
+    trials: list[dict[str, str]] = []
+    echoes = 0
+    values: set[bytes] = set()
+    for poison_address in POISON_SOURCES:
+        if poison_address == address:
+            continue  # cannot poison with the register under test
+        poison = _read_bytes(controller, poison_address, length, target)
+        value = _read_bytes(controller, address, length, target)
+        if poison is None or value is None:
+            trials.append({"poison": f"0x{poison_address:08x}", "read": "<unreadable>"})
+            continue
+        echo = value == poison
+        echoes += echo
+        values.add(value)
+        trials.append(
+            {
+                "poison": f"0x{poison_address:08x}",
+                "poison_value": poison.hex(),
+                "read": value.hex(),
+                "verdict": "echo" if echo else "independent",
+            }
+        )
+
+    # The signal is not "did it equal the poison" but "did it VARY WITH the
+    # poison". A backed register whose real value happens to match one poison
+    # would fail the first test and be called inconclusive; it passes this one,
+    # because its value stayed put while the poisons changed underneath it.
+    usable = [t for t in trials if "verdict" in t]
+    distinct_poisons = {t["poison_value"] for t in usable}
+    if not usable:
+        verdict, value = "unreadable", None
+    elif len(distinct_poisons) < 2:
+        # Every poison read back the same bytes, so nothing varied underneath
+        # the candidate and an echo is indistinguishable from a real value.
+        # Distinct from "unreadable": the device answered fine.
+        verdict, value = "no-distinct-poison", None
+    elif len(values) == 1:
+        verdict, value = "implemented", next(iter(values)).hex()
+    elif echoes == len(usable):
+        verdict, value = "unimplemented", None
+    else:
+        verdict, value = "inconclusive", None
+    return {
+        "verdict": verdict,
+        "value": value,
+        "trials_total": len(usable),
+        "trials_echoed": echoes,
+        "trials": trials,
+    }
+
+
 def run(
     host: str,
     port: int = TCP_PORT,
     timeout: float = 2.0,
     max_ports: int = 16,
-    cards_per_port: int = 8,
+    cards_per_port: int = 32,
     probe: bool = True,
     allow_register_bus: bool | None = None,
 ) -> BringUp:
@@ -262,17 +356,35 @@ def run(
             report.raw[name] = _safe_read(controller, address, length, Target.sending_card())
 
         # Which input register does this model actually answer on? Reading is
-        # safe; writing a guessed value at a live screen is not.
+        # safe; writing a guessed value at a live screen is not. A plain read is
+        # not enough to answer it -- see _classify_register.
         for label, address in INPUT_REGISTER_CANDIDATES.items():
-            report.input_registers[label] = {
-                "sending_card": _safe_read(controller, address, 1, Target.sending_card()),
-                "receiving_card": _safe_read(
-                    controller, address, 1, Target.receiving_card(0, 0)
-                ),
-            }
+            report.input_registers[label] = _classify_register(
+                controller, address, 1, Target.sending_card()
+            )
+        implemented = [
+            label
+            for label, result in report.input_registers.items()
+            if result["verdict"] == "implemented"
+        ]
+        if len(implemented) == 1:
+            report.notes.append(
+                f"input register narrowed to {implemented[0]} -- the others are "
+                f"unimplemented on this model. The register is settled; the VALUES "
+                f"are not. Establish them by changing the input from the front "
+                f"panel and re-reading, not by writing a guess."
+            )
+        elif not implemented:
+            report.notes.append(
+                "no candidate input register is backed by storage on this model"
+            )
 
         # Which ports actually have cards, and how many.
+        # Every port, not "until the first empty one": a real unit was found
+        # populating ports 0, 1, 2 and 4, and an enumerator that stops at the
+        # first gap would have reported a quarter of the installation.
         found_ports: dict[str, int] = {}
+        saturated: list[str] = []
         for port_index in range(max_ports):
             cards = 0
             misses = 0
@@ -288,6 +400,17 @@ def run(
                 report.cards.append(card.to_dict())
             if cards:
                 found_ports[str(port_index)] = cards
+            # A chain that fills the scan limit was probably cut short. Say so:
+            # a truncated count that looks like a complete one is worse than no
+            # count at all.
+            if cards == cards_per_port:
+                saturated.append(str(port_index))
+        if saturated:
+            report.notes.append(
+                f"ports {', '.join(saturated)} returned a card at every scanned "
+                f"position, so the chain may be longer than the {cards_per_port} "
+                f"scanned -- re-run with a higher --cards-per-port to be sure"
+            )
         report.ports = {
             "probed": max_ports,
             "with_cards": found_ports,
@@ -377,10 +500,13 @@ def format_report(report: BringUp) -> str:
             lines.append(f"    ... and {len(report.cards) - 8} more")
     lines.append("")
 
-    lines.append("INPUT REGISTER CANDIDATES (read only)")
-    for label, values in report.input_registers.items():
-        lines.append(f"  {label:<26} sender={values['sending_card']}  "
-                     f"card={values['receiving_card']}")
+    lines.append("INPUT REGISTER CANDIDATES (poison-discriminated, read only)")
+    for label, result in report.input_registers.items():
+        value = f"  value={result['value']}" if result.get("value") else ""
+        lines.append(
+            f"  {label:<26} {result['verdict']:<14} "
+            f"({result['trials_echoed']}/{result['trials_total']} echoed){value}"
+        )
     lines.append("")
 
     if report.monitoring:

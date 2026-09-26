@@ -37,6 +37,7 @@ from pathlib import Path
 
 from ..devices import DeviceProfile, Family, identify, unknown_profile
 from ..processor import CapabilityUnknown, NotSupported, Processor
+from ..protocol import ProtocolError
 from ..registers import DisplayMode, TestPattern
 from . import config as config_module
 from .history import AlertEngine, Thresholds
@@ -193,7 +194,7 @@ class Device:
 
             try:
                 self._read_into_state(processor)
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, ProtocolError) as exc:
                 self._mark_down(Reachability.UNREACHABLE, str(exc))
             return self.state
 
@@ -244,23 +245,31 @@ class Device:
         status: dict[str, Any] = {}
         try:
             monitoring = processor.monitoring()
-        except (NotSupported, ValueError, OSError):
+        except (NotSupported, ValueError, OSError, ProtocolError):
+            # A device answering with an error ack is a normal condition, not an
+            # app-level failure. Reading monitoring from chain position (0, 0)
+            # raises DeviceError(TIMEOUT) whenever no card is there -- which is
+            # every processor with no panels attached, and every processor whose
+            # first populated port is not port 0. Without ProtocolError here that
+            # escapes into the refresh thread and the whole UI silently freezes.
             return status
         if hasattr(monitoring, "temperature_c"):
             status["temperature_c"] = monitoring.temperature_c
             status["voltage_v"] = monitoring.voltage_v
             status["humidity_percent"] = monitoring.humidity_percent
         elif isinstance(monitoring, dict):
-            cabinets = monitoring.get("cabinets") or []
-            temperatures = [
-                c.get("temperature") for c in cabinets if isinstance(c, dict) and c.get("temperature")
-            ]
-            status["cabinets_total"] = len(cabinets)
-            status["cabinets_online"] = len(
-                [c for c in cabinets if isinstance(c, dict) and c.get("online")]
-            )
-            if temperatures:
-                status["temperature_c"] = max(temperatures)
+            # One interpreter for the COEX payload, shared with the read-only
+            # monitor, and total by construction. The ad-hoc version this
+            # replaced called max() over the real MX40 Pro's temperature dicts,
+            # raised TypeError, and killed the refresh thread -- the second time
+            # an uncaught exception here froze the UI. Anything it still cannot
+            # make sense of is recorded as a state, never raised.
+            from ..monitor import interpret_monitor_info
+
+            try:
+                status.update(interpret_monitor_info(monitoring))
+            except (TypeError, ValueError, KeyError, AttributeError) as exc:
+                status["interpretation_error"] = str(exc)
         return status
 
     # --- control ------------------------------------------------------------
@@ -281,7 +290,7 @@ class Device:
                 return record
             try:
                 self._dispatch(processor, action, arguments)
-            except (CapabilityUnknown, NotSupported, ValueError) as exc:
+            except (CapabilityUnknown, NotSupported, ValueError, ProtocolError) as exc:
                 record.ok = False
                 record.error = str(exc)
             except OSError as exc:
@@ -292,7 +301,7 @@ class Device:
                 # Reflect the change straight away rather than waiting for a tick.
                 try:
                     self._read_into_state(processor)
-                except (OSError, ValueError):
+                except (OSError, ValueError, ProtocolError):
                     pass
         return record
 

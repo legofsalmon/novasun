@@ -10,6 +10,8 @@ from novasun.coexsim import CoexState, SimulatedCoexController
 from novasun.devices import Family, identify, profile_for
 from novasun.simulator import SimulatedController
 
+from conftest import closed_port
+
 
 class TestProfiles:
     def test_target_models_are_known(self) -> None:
@@ -69,13 +71,24 @@ def coex(coex_server):
 
 
 class TestCoexClient:
-    def test_reads_device_and_topology(self, coex) -> None:
+    def test_reads_device_and_topology(self, coex, coex_server) -> None:
+        # /api/v1/device is documented but absent from a real MX40 Pro, so the
+        # simulator withholds it by default; this test is about the documented
+        # API and opts back in.
+        coex_server.state.missing_endpoints.clear()
         assert coex.device_info()["model"] == "MX40 Pro"
         assert len(coex.screens()["screens"]) == 1
-        assert len(coex.cabinets()["cabinets"]) == 8
-        assert len(coex.presets()["presets"]) == 2
+        # OBSERVED shapes: cabinets are a bare list; presets are grouped per
+        # screen under "screenPresets".
+        assert len(coex.cabinets()) == 8
+        assert len(coex.presets()["screenPresets"][0]["presets"]) == 2
 
     def test_display_mode_round_trips(self, coex, coex_server) -> None:
+        # The GET of displaymode answers 404 on a real MX40 Pro (OBSERVED), so
+        # the simulator withholds it by default. This test is about the
+        # documented round trip, and opts the read-back in; whether the PUT
+        # exists on that firmware is still UNKNOWN.
+        coex_server.state.missing_endpoints.discard("/api/v1/device/screen/displaymode")
         coex.set_display_mode(1)
         assert coex_server.state.display_mode == 1
         assert coex.request("GET", "/api/v1/device/screen/displaymode")["value"] == 1
@@ -118,19 +131,74 @@ class TestSnapshotDiff:
         brightness = [path for path in changes if path.endswith("brightness")]
         assert brightness, changes
         assert all(changes[path] == (1.0, 0.5) for path in brightness)
-        # Exactly one cabinet moved, in each endpoint that lists cabinets.
-        assert len(brightness) == len(
-            [path for path in changes if "cabinets[0]" in path and "brightness" in path]
-        )
+        # Exactly one cabinet moved, and only the cabinet endpoint carries
+        # brightness -- monitor/info reports readings, not settings.
+        assert brightness == ["cabinets[0].brightness"]
 
     def test_snapshot_records_unsupported_endpoints_without_failing(self, coex) -> None:
-        result = snapshot(coex, {"nope": "/api/v1/does/not/exist", "device": "/api/v1/device"})
+        # Two kinds of absence, both OBSERVED-or-derived and both recorded rather
+        # than raised: an undocumented path (code 6, derived) and a documented
+        # endpoint the firmware answers with HTTP 404 (observed on an MX40 Pro).
+        result = snapshot(
+            coex,
+            {"nope": "/api/v1/does/not/exist", "device": "/api/v1/device",
+             "screens": "/api/v1/screen"},
+        )
         assert "__error__" in result["nope"]
-        assert result["device"]["model"] == "MX40 Pro"
+        assert "__error__" in result["device"]
+        assert "404" in result["device"]["__error__"]
+        assert len(result["screens"]["screens"]) == 1  # the sweep carried on
+
+
+class TestKeyedDiff:
+    """diff_snapshots aligns lists by identity, because the real unit reorders.
+
+    Two monitor/info snapshots of an MX40 Pro 35 minutes apart returned the same
+    288 cabinets in a completely different order. Positionally that is 1,974
+    spurious changes; by cabinet id it is forty-one flickers of one degree.
+    """
+
+    def test_a_reordered_list_with_one_real_change_reports_one_change(self) -> None:
+        import copy
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        before = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        after = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        after["cabinets"].reverse()                       # the order the unit chose this time
+        after["rvCardsRuntime"].reverse()
+        after["cabinets"][0]["rvCards"][0]["temperature"]["value"] += 1   # was cabinets[2] before
+        changes = diff_snapshots(before, after)
+        assert [(p, o, n) for p, o, n in changes] == [
+            ("cabinets[2].rvCards[0].temperature.value", 37, 38)
+        ]
+
+    def test_an_element_that_disappears_is_reported_as_absent_not_as_noise(self) -> None:
+        import copy
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        before = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        after = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        gone = after["cabinets"].pop(1)
+        after["cabinets"].reverse()
+        changes = diff_snapshots(before, after)
+        paths = [p for p, _o, _n in changes]
+        assert "cabinets[]" in paths                       # the count moved
+        assert ("cabinets[1]", before["cabinets"][1], "__absent__") in changes
+        assert not any(".rvCards[0].cabinetID" in p for p in paths)   # no id "changes"
+        assert gone["rvCards"][0]["cabinetID"] == before["cabinets"][1]["rvCards"][0]["cabinetID"]
+
+    def test_unkeyed_lists_still_diff_positionally(self) -> None:
+        assert diff_snapshots([1, 2, 3], [1, 9, 3]) == [("[1]", 2, 9)]
+        assert diff_snapshots({"a": [{"x": 1}, {"x": 1}]}, {"a": [{"x": 1}, {"x": 2}]}) == [("a[1].x", 1, 2)]
 
 
 class TestIdentify:
     def test_identifies_a_coex_controller_over_http(self, coex_server) -> None:
+        """With /api/v1/device absent, as on a real MX40 Pro.
+
+        Presence comes from /api/v1/screen and the model from monitor/info's
+        name field -- the only identity that firmware's HTTP API offers.
+        """
         host, port = coex_server.address
         identification = identify(host, timeout=2.0, http_port=port, control_port=port)
 
@@ -138,7 +206,53 @@ class TestIdentify:
         assert identification.profile.name == "MX40 Pro"
         assert identification.profile.family is Family.COEX
         assert identification.preferred_path == "http"
+        assert identification.device_name == "MX40 Pro_000001"
         assert "MX40 Pro" in identification.summary()
+
+    def test_a_coex_controller_never_gets_a_register_bus_session(self, coex_server) -> None:
+        """The register bus is exclusive; opening it displaces VMP mid-show.
+
+        An earlier identify() probed the bus after HTTP answered "because it is
+        useful to know". Pointing control_port at a register-bus simulator and
+        asserting it saw nothing pins that it no longer does.
+        """
+        bus = SimulatedController("127.0.0.1", 0, model_id=0x6205)
+        bus.serve_in_thread()
+        try:
+            host, http_port = coex_server.address
+            _host, bus_port = bus.address
+            identification = identify(host, timeout=2.0, http_port=http_port, control_port=bus_port)
+        finally:
+            bus.shutdown()
+            bus.server_close()
+        assert identification.reachable_http
+        assert not identification.reachable_register_bus
+        assert bus.log == [], "identify() opened a register-bus session to a COEX controller"
+
+    def test_the_register_bus_can_be_forbidden_outright(self) -> None:
+        """register_bus=False must hold even when HTTP is down."""
+        bus = SimulatedController("127.0.0.1", 0, model_id=0x6205)
+        bus.serve_in_thread()
+        try:
+            _host, bus_port = bus.address
+            identification = identify(
+                "127.0.0.1", timeout=1.0, http_port=closed_port(), control_port=bus_port,
+                register_bus=False,
+            )
+        finally:
+            bus.shutdown()
+            bus.server_close()
+        assert not identification.reachable_http
+        assert not identification.reachable_register_bus
+        assert bus.log == []
+
+    def test_device_info_is_still_used_when_the_firmware_serves_it(self, coex_server) -> None:
+        coex_server.state.missing_endpoints.clear()
+        host, port = coex_server.address
+        identification = identify(host, timeout=2.0, http_port=port, control_port=port)
+        assert identification.reachable_http
+        assert identification.profile.name == "MX40 Pro"
+        assert identification.details.get("sn") == "SIM-MX40-0001"
 
     def test_identifies_a_register_bus_processor(self) -> None:
         server = SimulatedController("127.0.0.1", 0, model_id=0x6205)

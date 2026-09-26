@@ -13,6 +13,8 @@ from novasun import snmp
 from novasun.coexsim import SimulatedCoexController
 from novasun.discovery import PROBE, REPLY_PREFIX, UDP_PORT
 from novasun.monitor import (
+    MonitorSnapshot,
+    _interpret,
     MONITORING_ENDPOINTS,
     CoexMonitor,
     RateLimiter,
@@ -52,6 +54,27 @@ class TestPassiveListener:
                 listener.stop()
             with pytest.raises((TimeoutError, socket.timeout)):
                 peer.recvfrom(1024)
+
+    def test_a_null_listen_still_writes_a_session_record(self, tmp_path: Path) -> None:
+        """A run that hears nothing is a result, and must leave evidence of it.
+
+        Thirty minutes of silence on a live-show network with an MX40 present
+        is a finding about passive discovery. A log that was only ever written
+        per datagram left no trace of that run at all.
+        """
+        log = tmp_path / "listen.log"
+        listener = PassiveListener("127.0.0.1", 0, join_multicast=False, log_path=log)
+        try:
+            thread = listener.listen_in_thread(duration=0.3)
+            thread.join(timeout=2)
+        finally:
+            listener.stop()
+        text = log.read_text()
+        assert "# session start=" in text
+        assert "bind=127.0.0.1:" in text
+        assert "duration=0.3s" in text
+        assert "# session end=" in text
+        assert "observations=0" in text
 
     def test_observes_probes_and_replies(self) -> None:
         listener = PassiveListener("127.0.0.1", 0, join_multicast=False)
@@ -134,7 +157,9 @@ class TestReadOnlyClient:
     def test_get_works(self, server) -> None:
         host, port = server.address
         client = ReadOnlyCoexClient(host, port, timeout=2.0)
-        assert client.device_info()["model"] == "MX40 Pro"
+        # screens, not device_info: a real MX40 Pro serves the former and 404s
+        # the latter, and the simulator now says so by default.
+        assert len(client.screens()["screens"]) == 1
 
     def test_every_setter_is_blocked(self, server) -> None:
         """Blocking `request` closes all setters at once, present and future."""
@@ -173,7 +198,11 @@ class TestCoexMonitor:
             snapshot = monitor.poll()
 
         assert snapshot.model == "MX40 Pro"
-        assert snapshot.display_mode == 0
+        # Display mode is not readable over HTTP on a real MX40 Pro (the GET
+        # answers 404, OBSERVED), and the simulator now says so by default: the
+        # field stays None and the endpoint is recorded, not raised.
+        assert snapshot.display_mode is None
+        assert "display_mode" in snapshot.errors
         assert len(snapshot.cabinets) == 8
         assert snapshot.healthy
         assert snapshot.hottest is not None
@@ -188,6 +217,9 @@ class TestCoexMonitor:
         assert all(method == "GET" for method, _path, _body in server.state.requests)
 
     def test_slow_endpoints_are_cached_between_polls(self, server) -> None:
+        # This test is about caching, so every slow endpoint must actually
+        # answer; an endpoint that 404s is re-tried each poll by design.
+        server.state.missing_endpoints.clear()
         host, port = server.address
         with CoexMonitor(host, port, interval=0.0) as monitor:
             monitor.poll()
@@ -204,9 +236,13 @@ class TestCoexMonitor:
         monitor = CoexMonitor(host, port, interval=0.0)
         monitor.client  # noqa: B018 - constructed above
         snapshot = monitor.poll()
-        # The simulator does not implement /device/backup, so it answers
-        # NotSupport -- which must degrade the snapshot, not break the poll.
-        assert "backup" in snapshot.errors
+        # Two documented endpoints answer HTTP 404 on a real MX40 Pro
+        # (OBSERVED), and the simulator withholds them by default. Each must
+        # degrade the snapshot, not break the poll -- and /device/backup, once
+        # this test's example of an absent endpoint, turned out to exist.
+        assert "device" in snapshot.errors
+        assert "display_mode" in snapshot.errors
+        assert "backup" not in snapshot.errors
         assert snapshot.model == "MX40 Pro"
 
     def test_offline_cabinet_shows_up(self, server) -> None:
@@ -218,6 +254,68 @@ class TestCoexMonitor:
         assert [c.identifier for c in snapshot.offline_cabinets] == [
             server.state.cabinets[3]["id"]
         ]
+
+
+class TestRealShapes:
+    """The parsers against the OBSERVED MX40 Pro response structure.
+
+    The fixtures in conftest.py reproduce the real nesting exactly and none of
+    the real values. Before this, _interpret joined monitor/info on an "id" key
+    that the real entries do not have, and yielded 288 cabinets with no
+    temperature and no online state.
+    """
+
+    def test_monitor_info_interprets_totally(self) -> None:
+        from conftest import MX40_LIKE_MONITOR_INFO
+        from novasun.monitor import interpret_monitor_info
+
+        status = interpret_monitor_info(MX40_LIKE_MONITOR_INFO)
+        assert status["cabinets_total"] == 3
+        assert status["cabinets_online"] == 3
+        assert status["temperature_c"] == 41          # hottest receiving card
+        assert status["main_board_temperature_c"] == 42
+        assert status["main_board_voltage_v"] == 11.45
+        assert status["links_ok"] == 2
+
+    def test_monitor_info_never_raises_on_nonsense(self) -> None:
+        from novasun.monitor import interpret_monitor_info
+
+        for junk in (None, 7, "x", [], {"cabinets": "no"}, {"cabinets": [{"rvCards": [{"temperature": "hot"}]}]},
+                     {"mainBoardTemperature": {"value": "warm"}}):
+            interpret_monitor_info(junk)  # must not raise
+
+    def test_interpret_joins_cabinets_to_their_receiving_cards(self) -> None:
+        from conftest import (MX40_LIKE_CABINETS, MX40_LIKE_INPUTS,
+                              MX40_LIKE_MONITOR_INFO, MX40_LIKE_SCREENS)
+
+        snapshot = _interpret(MonitorSnapshot(timestamp=0.0, raw={
+            "cabinets": MX40_LIKE_CABINETS, "monitoring": MX40_LIKE_MONITOR_INFO,
+            "inputs": MX40_LIKE_INPUTS, "screens": MX40_LIKE_SCREENS,
+        }))
+        assert len(snapshot.cabinets) == 3
+        assert [c.temperature for c in snapshot.cabinets] == [39, 41, 37]
+        assert [c.voltage for c in snapshot.cabinets] == [4.2, 4.1, 4.4]
+        assert [c.link_ok for c in snapshot.cabinets] == [True, True, False]
+        assert all(c.online for c in snapshot.cabinets)
+        assert snapshot.hottest.temperature == 41
+        assert snapshot.healthy
+        assert snapshot.signal_present == ["HDMI 1"]
+        assert snapshot.model == "MX40 Pro"
+        assert snapshot.device_name == "MX40 Pro_000001"
+        assert all(c.brightness == 0.8 for c in snapshot.cabinets)
+
+    def test_a_configured_cabinet_missing_from_monitoring_is_offline(self) -> None:
+        from conftest import MX40_LIKE_CABINETS, MX40_LIKE_MONITOR_INFO
+        import copy
+
+        info = copy.deepcopy(MX40_LIKE_MONITOR_INFO)
+        del info["cabinets"][2]
+        snapshot = _interpret(MonitorSnapshot(timestamp=0.0, raw={
+            "cabinets": MX40_LIKE_CABINETS, "monitoring": info,
+        }))
+        assert [c.online for c in snapshot.cabinets] == [True, True, False]
+        assert not snapshot.healthy
+        assert len(snapshot.offline_cabinets) == 1
 
 
 class TestRateLimiter:

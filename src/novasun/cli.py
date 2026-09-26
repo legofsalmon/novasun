@@ -461,7 +461,14 @@ def cmd_names_show(args: argparse.Namespace) -> int:
 
 
 def cmd_coex_snapshot(args: argparse.Namespace) -> int:
-    client = coex_module.CoexClient(args.host, args.port, timeout=args.timeout)
+    # The read-only wrapper, not the full client: this command's whole promise
+    # is "dump every read-only endpoint", and a promise that holds only because
+    # snapshot() happens not to PUT today is not a promise. With the wrapper, a
+    # write added to snapshot() later raises WriteAttempted before a socket
+    # opens instead of reaching a live controller.
+    from .monitor import ReadOnlyCoexClient
+
+    client = ReadOnlyCoexClient(args.host, args.port, timeout=args.timeout)
     data = coex_module.snapshot(client)
     text = json.dumps(data, indent=2, sort_keys=True)
     if args.output:
@@ -529,7 +536,7 @@ def build_parser() -> argparse.ArgumentParser:
     bringup.add_argument("host")
     bringup.add_argument("--port", type=int, default=TCP_PORT)
     bringup.add_argument("--max-ports", type=int, default=16)
-    bringup.add_argument("--cards-per-port", type=int, default=8)
+    bringup.add_argument("--cards-per-port", type=int, default=32)
     bringup.add_argument("--json", help="also write the full report as JSON")
     bringup.add_argument(
         "--no-probe", action="store_true", help="do not send the discovery broadcast"

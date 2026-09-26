@@ -429,6 +429,24 @@ def profile_for(model_id: int) -> DeviceProfile:
     return MODELS.get(model_id) or unknown_profile(model_id)
 
 
+def coex_name_from_monitoring(client: "CoexClient") -> str | None:  # type: ignore[name-defined]
+    """The controller's name as ``monitor/info`` reports it, or ``None``.
+
+    On an MX40 Pro whose firmware lacks ``/api/v1/device`` this is the only
+    identity the HTTP API offers: ``"MX40 Pro_002198"`` -- model, underscore,
+    digits -- which :func:`coex_profile_for` matches on the model prefix.
+    """
+    from .coex import CoexError
+
+    try:
+        info = client.monitoring()
+    except (CoexError, OSError, ValueError):
+        return None
+    if isinstance(info, dict) and isinstance(info.get("name"), str) and info["name"]:
+        return info["name"]
+    return None
+
+
 def coex_profile_for(name: str | None) -> DeviceProfile:
     """Match a name reported by the COEX HTTP API against the known models."""
     if name:
@@ -513,35 +531,70 @@ def identify(
     timeout: float = 2.0,
     http_port: int | None = None,
     control_port: int | None = None,
+    register_bus: bool = True,
 ) -> Identification:
     """Work out what is at ``host`` and how to drive it.
 
     Tries the COEX HTTP API first: it is definitive for MX-class hardware and
-    fails fast when the port is closed. Falls back to the register bus, which is
-    everything else. Both are attempted, because a COEX controller answers on
-    both and it is useful to know that.
+    fails fast when the port is closed. **If the HTTP API answers, the register
+    bus is not touched.** A register-bus session is exclusive -- opening one to
+    a COEX controller displaces whatever VMP session is driving it -- and
+    identification never needs it once HTTP has answered. An earlier version
+    probed both "because it is useful to know"; against a controller running a
+    live show that is the wrong trade, and it is gone.
+
+    Presence is established by ``/api/v1/device`` and, when that answers HTTP
+    404, by ``/api/v1/screen``. A real MX40 Pro does exactly that: the
+    documented device-info endpoint is absent from its firmware while the screen
+    endpoint is served. Its model name is then taken from ``monitor/info``,
+    whose ``name`` field reads ``"MX40 Pro_<digits>"`` on that unit.
+
+    ``register_bus=False`` forbids the bus even when HTTP is down, for callers
+    that must stay read-only.
 
     The port arguments exist for non-standard deployments and for testing; left
     unset, the documented ports are used.
     """
+    import urllib.error
+
     from .client import Controller  # imported here to keep module import cheap
     from .coex import DEFAULT_PORT, CoexClient, CoexError
 
     identification = Identification(host=host, profile=unknown_profile())
+    identification.http_port = http_port or DEFAULT_PORT
+    client = CoexClient(host, identification.http_port, timeout=timeout)
 
+    name: str | None = None
+    answered = False
     try:
-        identification.http_port = http_port or DEFAULT_PORT
-        client = CoexClient(host, identification.http_port, timeout=timeout)
         device = client.device_info()
-        identification.reachable_http = True
-        name = None
+        answered = True
         if isinstance(device, dict):
             name = device.get("model") or device.get("name") or device.get("deviceName")
             identification.details = device
-        identification.profile = coex_profile_for(name)
-        identification.device_name = name
+    except urllib.error.HTTPError:
+        # An HTTP server is there; this firmware just does not serve the
+        # documented endpoint. The screen endpoint is what probe() relies on.
+        try:
+            client.screens()
+            answered = True
+        except CoexError:
+            answered = True  # answered in the API's own format
+        except (OSError, ValueError):
+            pass
     except (CoexError, OSError, ValueError):
         pass
+
+    if answered:
+        identification.reachable_http = True
+        if not name:
+            name = coex_name_from_monitoring(client)
+        identification.profile = coex_profile_for(name)
+        identification.device_name = name
+        return identification  # never open a control session to a COEX box here
+
+    if not register_bus:
+        return identification
 
     for port in [control_port] if control_port else _candidate_ports(identification.profile):
         try:

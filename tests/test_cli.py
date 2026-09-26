@@ -141,3 +141,46 @@ def test_capture_commands_on_a_session_log(tmp_path, capsys) -> None:
     assert main(["capture", "diff", str(log), str(other)]) == 0
     output = capsys.readouterr().out
     assert "0x02000001" in output and "40 -> ff" in output
+
+
+def test_coex_snapshot_issues_only_gets(capsys) -> None:
+    """The shipped snapshot command must be read-only in fact, not by luck.
+
+    It once built a full CoexClient and was read-only only because snapshot()
+    happened not to write. Against a controller running a live show that is not
+    a property worth having. The simulator logs every request's method, so this
+    is checked behaviourally rather than by reading the source.
+    """
+    from novasun.coexsim import SimulatedCoexController
+
+    server = SimulatedCoexController("127.0.0.1", 0)
+    server.serve_in_thread()
+    try:
+        host, port = server.address
+        assert main(["coex", "snapshot", host, "--port", str(port)]) == 0
+        payload = json.loads(capsys.readouterr().out)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert {"device", "screens", "cabinets", "inputs", "presets",
+            "monitoring", "audio", "snmp"} <= set(payload)
+    assert {method for method, _path, _body in server.state.requests} == {"GET"}
+
+
+def test_coex_snapshot_refuses_a_write_before_a_socket_opens(monkeypatch) -> None:
+    """Structural: the command hands snapshot() a read-only client.
+
+    If a write ever crept into snapshot(), this is what must happen -- a refusal
+    inside the client, before anything reaches the network -- rather than the
+    request quietly going out. The refusal itself is tested in test_monitoring;
+    this pins that the CLI is on the right side of it.
+    """
+    from novasun import coex as coex_module
+    from novasun.monitor import WriteAttempted
+
+    def would_write(client, endpoints=None):
+        return client.request("PUT", "/api/v1/screen", {"brightness": 0})
+
+    monkeypatch.setattr(coex_module, "snapshot", would_write)
+    with pytest.raises(WriteAttempted):
+        main(["coex", "snapshot", "127.0.0.1", "--port", "1"])

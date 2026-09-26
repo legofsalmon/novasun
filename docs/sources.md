@@ -41,7 +41,46 @@ self-consistent. Two of the 26 do not match their
 own stated checksums; both are source errors and are documented as such in
 [`../tests/test_protocol.py`](../tests/test_protocol.py).
 
-No NovaStar hardware was available while this was written, so nothing here has
-been confirmed against a live controller. Register addresses marked `derived` in
+## Hardware
+
+Everything above is documentary. One physical source now exists:
+
+| Unit | Identified as | Available since |
+|---|---|---|
+| NovaPro UHD Jr | model ID `0x6205`, serial `16:04:11:00:c1:c9:2d:00`, discovery tail `App,0161` | 2026-08-26 |
+| MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **Three read-only bursts of eight HTTP GETs** (two mid-show, one five hours later), a few extra GETs, eight unanswered discovery probes and six unanswered SNMP GETs were sent to it, plus a ten-minute 1 Hz read-only poll after the show (1,791 GETs, three endpoints); nothing else. SNMP off; 288 cabinets on 6 outputs | 2026-09-11 |
+
+Driving 30 receiving cards (model `0x4506`, firmware `4.3.0.0`) across output
+ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
+reproduced across a power cycle of the unit.
+
+What it settled: the model ID against the decompiled table, the shape of the
+`rpProMI:` discovery reply (and that replies are unicast), the receiving-card
+presence test, the §3.1.1 monitoring decode, cabinet geometry, the per-connector
+signal record layout — and four undocumented firmware behaviours that make naive
+register reads return plausible wrong data, described in
+[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie).
+
+What it did **not** settle, despite an earlier version of this note claiming
+otherwise: **which input register the UHD Jr implements**. All three documented
+candidates are ruled out and the selection state was not found anywhere in the
+~20 KB of distinct register content swept. See
+[`target-hardware.md`](target-hardware.md#refusing-rather-than-guessing).
+
+What it cannot settle: anything COEX, anything VX4S, and input values in general.
+
+The MX40 Pro settled, by listening: it does not announce itself on UDP 3800,
+and VMP does not probe on a timer. By one read-only burst of eight GETs: the
+real response shapes of six endpoints (every field name this project had
+guessed was wrong), that two documented endpoints are absent (HTTP 404), that
+SNMP was off, and that a burst of GETs with VMP attached costs nothing
+visible. A second burst 35 minutes later settled that `monitor/info` reorders
+its cabinets on every call, that runtimes are seconds at 60 s granularity, and
+what a quiet wall's readings do over half an hour (±1 °C, ±0.1 V). The SNMP OID map remains **unexercised** — it cannot be exercised
+read-only on a unit with SNMP disabled.
+
+Register addresses still marked `derived` in
 [`../src/novasun/registers.py`](../src/novasun/registers.py) come from decompiled
-sources rather than documentation and should be verified before being relied on.
+sources rather than documentation and should be verified before being relied on;
+`OBSERVED` in the same module records which have now been seen on hardware, and
+`NOT_IMPLEMENTED` records which were looked for and found absent.

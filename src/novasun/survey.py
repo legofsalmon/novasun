@@ -33,6 +33,7 @@ from .devices import DeviceProfile, Family, Identification, coex_profile_for, un
 from .discovery import discover
 from .monitor import CoexMonitor, MonitorSnapshot
 from .transport import TCP_PORT
+from .protocol import ProtocolError
 
 SCHEMA_VERSION = 1
 """Bump when the serialised shape changes incompatibly.
@@ -187,7 +188,7 @@ def survey_device(
                 result.status = _status_from(snapshot)
             result.errors = [f"{name}: {msg}" for name, msg in snapshot.errors.items()]
             return result
-    except (OSError, ValueError):
+    except (OSError, ValueError, ProtocolError):
         pass
 
     if not allow_register_bus:

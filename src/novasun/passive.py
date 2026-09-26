@@ -5,13 +5,20 @@ never sends. It binds UDP 3800, joins the discovery multicast group, and records
 what crosses it -- both the ``rqProMI:`` probes that NovaLCT and VMP emit and any
 ``rpProMI:`` replies that reach this host.
 
-**What a silent listener can actually see is not fully known.** The probe is
-broadcast, so it is always observable. Whether the *reply* is broadcast or
-unicast back to the requester decides whether a third-party listener sees the
-inventory at all, and that has not been established -- see
-``docs/read-only-monitoring.md``. This module is written so that one session
-with hardware settles it: run :func:`listen`, have someone open NovaLCT, and
-read the log.
+**What a silent listener can see is now established, and it is less than was
+hoped.** The probe is broadcast, so it is always observable. The *reply* is
+**unicast** back to the requester -- confirmed by packet capture, addressed to
+the requester's own MAC and IP at both layer 2 and layer 3 -- so a switch never
+forwards it here.
+
+A listener on a third host therefore sees probes and no replies. That is enough
+to report that a control application is running and how often it scans, and it
+is not enough to build an inventory. Doing that passively needs a port mirror, a
+tap, or running on the same host as the control application.
+
+The "probes seen but no replies" outcome this module reports is consequently the
+*expected* one on a third host, not a sign of a problem. See
+``docs/read-only-monitoring.md``.
 
 Nothing in this module transmits. :class:`PassiveListener` opens its socket
 receive-only and there is no send path in the class at all; the test suite
@@ -168,6 +175,12 @@ class PassiveListener:
     def listen(self, duration: float | None = None) -> list[Observation]:
         """Receive until ``duration`` elapses, or until :meth:`stop`."""
         self._running = True
+        started = time.time()
+        host, port = self.address
+        self._log_line(
+            f"# session start={started:.3f} bind={host}:{port} "
+            f"duration={'until-stopped' if duration is None else f'{duration:g}s'}"
+        )
         deadline = None if duration is None else time.monotonic() + duration
         while self._running:
             if deadline is not None:
@@ -184,6 +197,14 @@ class PassiveListener:
             except OSError:
                 break
             self._record(Observation(time.time(), source, payload))
+        # A run that hears nothing is a result -- thirty minutes of silence on a
+        # network with a controller on it says something about passive
+        # discovery -- so the session leaves evidence of itself even when no
+        # datagram ever did.
+        self._log_line(
+            f"# session end={time.time():.3f} elapsed={time.time() - started:.1f}s "
+            f"observations={len(self.observations)}"
+        )
         return self.observations
 
     def listen_in_thread(self, duration: float | None = None) -> threading.Thread:
@@ -191,15 +212,23 @@ class PassiveListener:
         thread.start()
         return thread
 
+    def _log_line(self, line: str) -> None:
+        """Append one line to the log, if there is one. Lines starting with
+        ``#`` are session records; every other line is a tab-separated datagram
+        (timestamp, source, payload hex)."""
+        if self.log_path is None:
+            return
+        with self._lock:  # a Condition's default lock is re-entrant
+            with self.log_path.open("a") as handle:
+                handle.write(line + "\n")
+
     def _record(self, observation: Observation) -> None:
         with self._lock:
             self.observations.append(observation)
-            if self.log_path is not None:
-                with self.log_path.open("a") as handle:
-                    handle.write(
-                        f"{observation.timestamp}\t{observation.source}\t"
-                        f"{observation.payload.hex()}\n"
-                    )
+            self._log_line(
+                f"{observation.timestamp}\t{observation.source}\t"
+                f"{observation.payload.hex()}"
+            )
             self._lock.notify_all()
         for observe in self.observers:
             observe(observation)
@@ -267,7 +296,7 @@ class PassiveInventory:
             lines.append(f"  {entry.address:<15} {entry.replies:>3} replies  {entry.detail}")
         if not self.devices and self.probes:
             lines.append(
-                "  probes seen but no replies -- replies are probably unicast to the "
+                "  probes seen but no replies -- replies are unicast to the "
                 "requester, so passive discovery needs a port mirror"
             )
         return "\n".join(lines)

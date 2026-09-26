@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .coex import DEFAULT_PORT, CoexClient, CoexError
+from .protocol import ProtocolError
 
 #: GET endpoints worth polling, and how they map onto a monitoring pane.
 MONITORING_ENDPOINTS: dict[str, str] = {
@@ -84,7 +85,14 @@ class RateLimiter:
 
 @dataclass
 class CabinetHealth:
-    """Per-cabinet state a monitoring pane can show."""
+    """Per-cabinet state a monitoring pane can show.
+
+    ``online`` on a COEX controller means *present in monitor/info with a
+    receiving card reporting* -- REASONED: the real payload carries no online
+    flag, and a cabinet that is reporting temperature and voltage is the
+    working definition of one that is there. ``link_ok`` is the card's own
+    ``nextCabinetLinkStatus.linkStatus`` (OBSERVED, all true on a healthy wall).
+    """
 
     identifier: Any
     name: str | None = None
@@ -92,6 +100,8 @@ class CabinetHealth:
     temperature: float | None = None
     brightness: float | None = None
     screen: str | None = None
+    voltage: float | None = None
+    link_ok: bool | None = None
 
 
 @dataclass
@@ -126,10 +136,13 @@ class MonitorSnapshot:
 
     @property
     def signal_present(self) -> list[str]:
+        # A real MX40 Pro has no "connected"; it has sourceStatus, 1 on the two
+        # inputs that were carrying the show and 0 on the rest. REASONED from
+        # that pattern -- an unplug test would make it OBSERVED.
         return [
             str(source.get("name") or source.get("id"))
             for source in self.inputs
-            if source.get("connected")
+            if source.get("connected") or source.get("sourceStatus") == 1
         ]
 
     def summary(self) -> str:
@@ -175,7 +188,7 @@ class CoexMonitor:
             if exc.code == 5:  # Busying: the controller is doing something else
                 self.limiter.back_off()
             return None, str(exc)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, ProtocolError) as exc:
             return None, str(exc)
 
     def poll(self, include_slow: bool | None = None) -> MonitorSnapshot:
@@ -208,6 +221,84 @@ class CoexMonitor:
         self.close()
 
 
+def _number(value: Any) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _reading(value: Any) -> float | None:
+    """A sensor value as monitor/info reports it: ``{"value": 39, ...}`` or bare."""
+    if isinstance(value, dict):
+        return _number(value.get("value"))
+    return _number(value)
+
+
+def _live_cabinets(info: Any) -> dict[str, dict[str, Any]]:
+    """Per-cabinet readings from monitor/info, keyed by cabinet id.
+
+    OBSERVED shape on an MX40 Pro: ``cabinets[]`` entries whose own ``cabinetID``
+    is always 0 and whose top-level temperature reads 0, each carrying an
+    ``rvCards[]`` list -- one card on that wall -- and it is the card that holds
+    the real readings and the id that matches ``/api/v1/device/cabinet``'s
+    ``id`` (288 of 288). The simulator's earlier guess -- flat entries with
+    ``id``, numeric ``temperature`` and ``online`` -- is still understood.
+    """
+    live: dict[str, dict[str, Any]] = {}
+    for entry in _as_list(info, "cabinets"):
+        if not isinstance(entry, dict):
+            continue
+        cards = entry.get("rvCards")
+        if isinstance(cards, list):
+            for card in cards:
+                if not isinstance(card, dict) or card.get("cabinetID") is None:
+                    continue
+                link = card.get("nextCabinetLinkStatus")
+                live[str(card["cabinetID"])] = {
+                    "present": True,
+                    "temperature": _reading(card.get("temperature")),
+                    "voltage": _reading(card.get("voltage")),
+                    "link_ok": link.get("linkStatus") if isinstance(link, dict) else None,
+                }
+        elif entry.get("id") is not None:
+            live[str(entry["id"])] = {
+                "present": entry.get("online"),
+                "temperature": _reading(entry.get("temperature")),
+                "voltage": _reading(entry.get("voltage")),
+                "link_ok": None,
+            }
+    return live
+
+
+def interpret_monitor_info(info: Any) -> dict[str, Any]:
+    """The status keys the application shows, from one monitor/info payload.
+
+    Total: it never raises, whatever shape it is handed. The application's
+    refresh thread once died on a real MX40 Pro because the temperature field
+    turned out to be ``{"name", "status", "value"}`` and ``max()`` was asked to
+    compare dicts -- a TypeError that nothing caught. A surprising shape is a
+    state to report, not an exception to propagate.
+    """
+    status: dict[str, Any] = {}
+    if not isinstance(info, dict):
+        return status
+    live = _live_cabinets(info)
+    cabinets = _as_list(info, "cabinets")
+    status["cabinets_total"] = len(live) or len(cabinets)
+    status["cabinets_online"] = sum(1 for c in live.values() if c.get("present"))
+    temperatures = [c["temperature"] for c in live.values() if c.get("temperature") is not None]
+    if temperatures:
+        status["temperature_c"] = max(temperatures)
+    board_t = _reading(info.get("mainBoardTemperature"))
+    if board_t is not None:
+        status["main_board_temperature_c"] = board_t
+    board_v = _reading(info.get("mainBoardVoltage"))
+    if board_v is not None:
+        status["main_board_voltage_v"] = board_v
+    links = [c["link_ok"] for c in live.values() if c.get("link_ok") is not None]
+    if links:
+        status["links_ok"] = sum(1 for ok in links if ok)
+    return status
+
+
 def _as_list(value: Any, *keys: str) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         for key in keys:
@@ -231,6 +322,18 @@ def _interpret(snapshot: MonitorSnapshot) -> MonitorSnapshot:
         snapshot.device_name = device.get("name") or device.get("deviceName")
         snapshot.serial = device.get("sn") or device.get("serialNumber")
 
+    # OBSERVED on an MX40 Pro: /api/v1/device is absent (HTTP 404) and the only
+    # identity the API offers is monitor/info's name, "MX40 Pro_002198". The
+    # model is the recognised prefix; the whole string is the device name.
+    info = snapshot.raw.get("monitoring")
+    if isinstance(info, dict) and isinstance(info.get("name"), str) and info["name"]:
+        from .devices import coex_profile_for  # cheap: devices imports nothing heavy
+
+        snapshot.device_name = snapshot.device_name or info["name"]
+        if snapshot.model is None:
+            profile = coex_profile_for(info["name"])
+            snapshot.model = profile.name if profile.name.lower() in info["name"].lower() else None
+
     display = snapshot.raw.get("display_mode")
     if isinstance(display, dict) and isinstance(display.get("value"), int):
         snapshot.display_mode = display["value"]
@@ -238,23 +341,30 @@ def _interpret(snapshot: MonitorSnapshot) -> MonitorSnapshot:
     snapshot.screens = _as_list(snapshot.raw.get("screens"), "screens")
     snapshot.inputs = _as_list(snapshot.raw.get("inputs"), "sources", "inputs")
 
-    monitoring = {
-        str(entry.get("id")): entry
-        for entry in _as_list(snapshot.raw.get("monitoring"), "cabinets")
-        if isinstance(entry, dict)
-    }
+    live_by_id = _live_cabinets(snapshot.raw.get("monitoring"))
     for entry in _as_list(snapshot.raw.get("cabinets"), "cabinets"):
         if not isinstance(entry, dict):
             continue
-        live = monitoring.get(str(entry.get("id")), {})
+        live = live_by_id.get(str(entry.get("id")), {})
+        if live:
+            online = bool(live.get("present"))
+        elif live_by_id:
+            online = False  # monitoring answered, and this cabinet was not in it
+        else:
+            online = entry.get("online")
         snapshot.cabinets.append(
             CabinetHealth(
                 identifier=entry.get("id"),
-                name=entry.get("name"),
-                online=live.get("online", entry.get("online")),
-                temperature=live.get("temperature", entry.get("temperature")),
-                brightness=entry.get("brightness"),
-                screen=entry.get("screenID"),
+                # Real cabinets carry no "name"; shortName is usually empty and
+                # rvCardName is the card model ("A5sPlus"), so a pane falls back
+                # to the id -- which is what the operator's VMP shows too.
+                name=entry.get("name") or entry.get("shortName") or None,
+                online=online,
+                temperature=live.get("temperature", _reading(entry.get("temperature"))),
+                brightness=_number(entry.get("brightness")),
+                screen=entry.get("screenID") or entry.get("canvasID"),
+                voltage=live.get("voltage"),
+                link_ok=live.get("link_ok"),
             )
         )
     return snapshot

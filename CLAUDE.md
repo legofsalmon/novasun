@@ -34,6 +34,15 @@ For all future work here:
 - **Never widen crewbox's surface to writes.** `ReadOnlyCoexClient` rejects
   non-GET before a socket opens, and `passive.py` has no send path at all. Both
   properties are asserted by tests. Keep them.
+- **Ship evidence, not PRs.** When a finding affects crewbox, record it here —
+  the contract document, a fixture under `tests/fixtures/` with real structure
+  and synthetic values, a harness if one helps — and push. crewbox's own agent
+  applies it. Do not implement the crewbox side from this repository or open
+  PRs against it: on 2026-09-11 that was tried in parallel with crewbox's agent
+  working from the pushed fixture, and the agent's version landed first, better
+  reasoned for that codebase, and the duplicate had to be thrown away. The
+  handoff that worked was the one through the documents, which is what this
+  standing instruction is for.
 
 ## Working at a venue
 
@@ -116,8 +125,53 @@ python -m novasun simulate register --model vx4s  # or uhd-jr, mctrl4k, ...
 python -m novasun simulate coex                   # MX-class HTTP API
 ```
 
-No NovaStar hardware has ever been available to this project. Everything is
-validated against vendor documents and the two simulators. When adding a
+A **NovaPro UHD Jr** has been on the bench since 2026-08-26, at `192.168.0.10`,
+driving 30 receiving cards across ports 0, 1, 2 and 4. Findings confirmed on it
+are marked `OBSERVED` (see `registers.OBSERVED` and `registers.NOT_IMPLEMENTED`);
+`docs/sources.md` records what it can and cannot settle.
+
+An **MX40 Pro** on a live-show network was listened to passively and then read
+**once** — a single burst of eight HTTP GETs through the read-only client
+(2026-09-11). That is the whole of this project's contact with COEX hardware,
+and it changed a lot: every response shape the simulator had guessed was wrong,
+`/api/v1/device` is absent (HTTP 404) on that firmware, SNMP was off, and the
+application both crashed on the real monitoring payload and would have opened
+register-bus sessions to the controller. All four are fixed; the simulator now
+emits the observed shapes by default. VX4S is still document-and-simulator only.
+
+**An MX40 Pro does not answer `rqProMI:` discovery at all** (OBSERVED), so
+`novasun discover` cannot find COEX hardware; it has to be given the address.
+
+**On a live show, never open a register-bus session to a COEX controller.** The
+session is exclusive and displaces the VMP session running the show. `info`
+opens one unconditionally, and so does `bringup --register-bus`. `bringup`
+without it, and `identify()` — and so `serve` and `status` — stop at the HTTP
+API once it has answered, but check that holds in the version you are running
+before trusting it near a live unit. `listen`, `watch --once`,
+`coex snapshot` and `survey --no-probe` are read-only by construction. Use
+those, and only with the operator's go.
+
+**Four firmware behaviours make naive register reads lie**, all OBSERVED and
+all silent — well-formed frames, `ack = SUCCEEDED`, no error. The two that
+matter when probing:
+
+- **An unimplemented address returns the previous read's payload**, not zeros.
+  A sequential sweep therefore reports nearly every address as a live register
+  holding plausible data. Test an address by poisoning the response buffer with
+  a known value first; use several distinct poisons, and key the verdict on
+  whether the value *varies with* the poison rather than on whether it ever
+  equals one. `bringup._classify_register` does this.
+- **Reads snap to field boundaries.** A read starting inside a multi-byte field
+  returns that field's start. Reads at documented base addresses are fine, so
+  this is a trap for probing, not a bug in normal use — but a block cannot be
+  walked byte by byte.
+
+The other two bite in normal use: **a block must be read from its base in one
+request** (chunking a read corrupts it), and **the receiving-card monitoring
+block is exactly 0x100 bytes** (reads beyond it alias into another block). Both
+are traps 3 and 4 in `docs/read-only-monitoring.md` §5.
+
+Everything else is validated against vendor documents and the two simulators. When adding a
 protocol feature, add it to the relevant simulator too — otherwise it is
 untestable, and an untested protocol claim is a guess with extra steps.
 

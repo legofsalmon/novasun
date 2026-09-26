@@ -303,6 +303,26 @@ class Controller:
                 found.append(card)
         return found
 
+    def read_connector_signals(self, count: int = 12) -> list["ConnectorSignal"]:
+        """Per-connector signal state: resolution, refresh and presence.
+
+        Reads the video-source record array from the sending card. This reports
+        each connector regardless of which input is routed -- there is no known
+        way to read the *selected* input on any model this project has met.
+        """
+        length = count * reg.VIDEO_SOURCE_RECORD_SIZE
+        # One request, not several. The firmware serves this array when it is
+        # read from its base; a request starting partway in is resolved as
+        # whatever register lives at *that* address instead. 0x13010100 is one
+        # such address -- read on its own it returns what look like pointers --
+        # so a read chunked at the default 256 bytes silently loses record 8
+        # onwards. Passing chunk=length keeps it to a single frame, which the
+        # 2048-byte max packet size comfortably allows.
+        raw = self.read(
+            reg.VIDEO_SOURCE_STATE, length, Target.sending_card(), chunk=length
+        )
+        return parse_connector_signals(raw)
+
     def read_receiver_monitoring(self, port: int, index: int) -> "ReceiverStatus":
         raw = self.read(
             reg.RECEIVER_MONITORING, 0x100, Target.receiving_card(port=port, index=index)
@@ -381,7 +401,108 @@ class ReceiverStatus:
         return cls(temperature_c=temperature, humidity_percent=humidity, voltage_v=voltage, raw=raw)
 
 
+@dataclass
+class ConnectorSignal:
+    """One 32-byte record from the :data:`registers.VIDEO_SOURCE_STATE` array.
+
+    The array describes **connectors**, not the selected input: a record reports
+    its own connector's signal whatever the processor is currently routing. On a
+    UHD Jr, records 0-7 are inputs and record 8 reports the output canvas.
+
+    Field offsets and their meanings are OBSERVED -- see
+    ``docs/read-only-monitoring.md``. Which connector each index corresponds to
+    is not: only index 1 has been tied to a physical socket (HDMI, on one unit),
+    so :attr:`label` is deliberately absent rather than guessed.
+    """
+
+    index: int
+    width: int
+    height: int
+    frame_period_us: int
+    refresh_centihertz: int
+    raw: bytes
+
+    @property
+    def has_signal(self) -> bool:
+        """Whether a source is locked.
+
+        Zero width and height is the no-signal indicator: observed going to zero
+        both on cable removal and during link re-training on a mode change.
+        """
+        return self.width > 0 and self.height > 0
+
+    @property
+    def refresh_hz(self) -> float | None:
+        """Nominal refresh rate. Steady, so this is the one to display."""
+        if not self.has_signal or not self.refresh_centihertz:
+            return None
+        return self.refresh_centihertz / 100
+
+    @property
+    def measured_hz(self) -> float | None:
+        """Refresh implied by the measured frame period.
+
+        Jitters by a few microseconds between reads, because it is measured
+        rather than declared. Useful for spotting a drifting source; misleading
+        as a label, which is what :attr:`refresh_hz` is for.
+        """
+        if not self.has_signal or not self.frame_period_us:
+            return None
+        return round(1_000_000 / self.frame_period_us, 2)
+
+    def describe(self) -> str:
+        if not self.has_signal:
+            return f"connector {self.index}: no signal"
+        rate = f" @ {self.refresh_hz:g}Hz" if self.refresh_hz else ""
+        return f"connector {self.index}: {self.width}x{self.height}{rate}"
+
+    @classmethod
+    def parse(cls, raw: bytes, index: int) -> "ConnectorSignal":
+        def u16(offset: int) -> int:
+            return int.from_bytes(raw[offset : offset + 2], "little")
+
+        return cls(
+            index=index,
+            width=u16(reg.VSR_WIDTH),
+            height=u16(reg.VSR_HEIGHT),
+            frame_period_us=u16(reg.VSR_FRAME_PERIOD_US),
+            refresh_centihertz=u16(reg.VSR_REFRESH_CHZ),
+            raw=raw,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "has_signal": self.has_signal,
+            "width": self.width,
+            "height": self.height,
+            "refresh_hz": self.refresh_hz,
+            "measured_hz": self.measured_hz,
+        }
+
+
+def parse_connector_signals(raw: bytes, limit: int | None = None) -> list[ConnectorSignal]:
+    """Split the video-source block into records, stopping where the array does.
+
+    Each record carries its own index at ``VSR_INDEX``, ascending from zero.
+    Past the end of the array that byte stops ascending and the values become
+    incoherent, so the index is used as the terminator rather than a hard-coded
+    count -- a different model may well have a different number of connectors.
+    """
+    size = reg.VIDEO_SOURCE_RECORD_SIZE
+    records: list[ConnectorSignal] = []
+    for position in range(len(raw) // size):
+        chunk = raw[position * size : (position + 1) * size]
+        if chunk[reg.VSR_INDEX] != position:
+            break  # past the end of the array
+        records.append(ConnectorSignal.parse(chunk, position))
+        if limit is not None and len(records) >= limit:
+            break
+    return records
+
+
 __all__ = [
+    "ConnectorSignal",
     "Controller",
     "DeviceInfo",
     "ReceivingCard",
@@ -389,4 +510,5 @@ __all__ = [
     "Target",
     "DeviceType",
     "ErrorType",
+    "parse_connector_signals",
 ]

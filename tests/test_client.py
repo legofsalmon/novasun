@@ -233,3 +233,237 @@ class TestReceivingCardEnumeration:
         card = controller.probe_receiving_card(0, 0)
         assert card is not None
         assert json.dumps(card.to_dict())
+
+
+class TestStaleResponseBuffer:
+    """An unimplemented address echoes the previous read instead of erroring.
+
+    OBSERVED on a NovaPro UHD Jr and reproduced across a power cycle: reading an
+    address the firmware does not back returns the previous read's payload in a
+    well-formed frame with ack = SUCCEEDED. Nothing in the response says "no
+    such register", so a sequential sweep reports nearly every address as live,
+    holding plausible data.
+
+    These tests exist so the discriminator that defeats it cannot regress.
+    """
+
+    UNBACKED = 0x0220_0020
+
+    @pytest.fixture()
+    def server(self):
+        s = SimulatedController(
+            "127.0.0.1", 0, model_id=0x6205, unimplemented=((self.UNBACKED, 0x10),)
+        )
+        s.serve_in_thread()
+        yield s
+        s.shutdown()
+        s.server_close()
+
+    def test_unbacked_address_echoes_the_previous_read(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            first = controller.read(reg.CONTROLLER_SN_HIGH, 8)
+            assert controller.read(self.UNBACKED, 8) == first
+
+            second = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+            assert controller.read(self.UNBACKED, 2) == second
+
+    def test_the_echo_is_not_an_error_and_not_zeros(self, server) -> None:
+        """The trap is precisely that it looks like a successful read."""
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            controller.read(reg.CONTROLLER_SN_HIGH, 8)
+            echoed = controller.read(self.UNBACKED, 8)
+        assert echoed != bytes(8)          # not zeros, as the docs once claimed
+        assert any(echoed)                 # and it carries plausible content
+
+    def test_a_backed_register_is_independent_of_the_poison(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            controller.read(reg.CONTROLLER_SN_HIGH, 8)
+            a = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+            controller.read(0x0000_0000, 8)
+            b = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+        assert a == b
+
+    def test_one_poison_can_misclassify_a_backed_register(self, server) -> None:
+        """Why the discriminator needs more than one poison.
+
+        A register whose genuine value happens to equal the poison looks like an
+        echo. This is not hypothetical: a two-trial version of this test
+        misclassified 0x02200022 during bring-up of the first real unit.
+        """
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            # Poison with the model ID, then read the model ID: a single trial
+            # cannot tell "echoed" from "genuinely equal".
+            poison = controller.read(reg.CONTROLLER_MODEL_ID, 2)
+            assert controller.read(reg.CONTROLLER_MODEL_ID, 2) == poison
+
+    def test_bringup_classifier_separates_backed_from_unbacked(self, server) -> None:
+        from novasun.bringup import _classify_register
+
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            backed = _classify_register(
+                controller, reg.CONTROLLER_MODEL_ID, 2, Target.sending_card()
+            )
+            unbacked = _classify_register(
+                controller, self.UNBACKED, 2, Target.sending_card()
+            )
+        assert backed["verdict"] == "implemented"
+        assert unbacked["verdict"] == "unimplemented"
+        assert unbacked["trials_echoed"] == unbacked["trials_total"]
+
+    def test_a_coincidental_echo_does_not_condemn_a_backed_register(self, server) -> None:
+        """A backed register whose real value equals a poison must survive.
+
+        KILL_MODE reads 0x00, and several poison sources also lead with 0x00, so
+        most trials echo by coincidence. The classifier keys on whether the value
+        VARIES WITH the poison rather than on whether it ever equals one, so this
+        is reported as implemented rather than as unimplemented or inconclusive.
+
+        Getting this wrong is not hypothetical: an earlier version keyed on
+        equality and misclassified 0x02200022 on real hardware.
+        """
+        from novasun.bringup import _classify_register
+
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            result = _classify_register(
+                controller, reg.KILL_MODE, 1, Target.sending_card()
+            )
+        assert result["verdict"] == "implemented"
+        assert result["trials_echoed"] >= 1        # the coincidence really happens
+        assert result["value"] == "00"             # and the value is still right
+
+    def test_a_long_candidate_is_testable(self, server) -> None:
+        """Poisons are read at the candidate's length, so size does not matter.
+
+        An earlier version fixed the poison lengths and discarded any shorter
+        than the candidate, which left every long register with zero usable
+        trials -- reported as "unreadable", which reads as a device refusing when
+        the device had answered perfectly well.
+        """
+        from novasun.bringup import _classify_register
+
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            result = _classify_register(
+                controller, reg.DEVICE_NAME_SPACE, 88, Target.sending_card()
+            )
+        assert result["verdict"] == "implemented"
+        assert result["trials_total"] >= 2
+
+
+class TestConnectorSignals:
+    """The video-source record array: per-connector signal state.
+
+    Layout confirmed on a NovaPro UHD Jr against three source modes, so these
+    pin a decode that is evidenced rather than inferred. The array describes
+    connectors, not the selected input -- a record reports its own connector
+    whatever the processor is routing.
+    """
+
+    @pytest.fixture()
+    def server(self):
+        s = SimulatedController("127.0.0.1", 0, model_id=0x6205)
+        s.serve_in_thread()
+        yield s
+        s.shutdown()
+        s.server_close()
+
+    def test_reads_the_connector_array(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            signals = controller.read_connector_signals()
+        # Records 0..8: eight inputs plus the output canvas. The garbage record
+        # past the end must not be included.
+        assert [s.index for s in signals] == list(range(9))
+
+    def test_a_connector_with_a_source(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            signals = controller.read_connector_signals()
+        live = signals[1]
+        assert live.has_signal
+        assert (live.width, live.height) == (1920, 1080)
+        assert live.refresh_hz == 60.0
+        assert live.measured_hz == pytest.approx(60.0, abs=0.05)
+        assert "1920x1080" in live.describe()
+
+    def test_an_idle_connector_reports_no_signal(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            signals = controller.read_connector_signals()
+        idle = signals[0]
+        assert not idle.has_signal
+        assert idle.refresh_hz is None      # not 0.0 -- there is no rate to give
+        assert idle.measured_hz is None
+        assert "no signal" in idle.describe()
+
+    def test_the_array_terminates_on_a_broken_index(self) -> None:
+        """The index byte, not a hard-coded count, ends the array.
+
+        Past the end of the real array the index stops ascending and the values
+        become incoherent. A different model may have a different number of
+        connectors, so the terminator has to be the data.
+        """
+        from novasun.client import parse_connector_signals
+
+        good = bytearray(reg.VIDEO_SOURCE_RECORD_SIZE * 3)
+        for i in range(3):
+            good[i * reg.VIDEO_SOURCE_RECORD_SIZE + reg.VSR_INDEX] = i
+        rubbish = bytes([0x7F]) * reg.VIDEO_SOURCE_RECORD_SIZE
+        assert len(parse_connector_signals(bytes(good) + rubbish)) == 3
+
+    def test_zero_dimensions_is_no_signal_not_a_zero_sized_signal(self) -> None:
+        from novasun.client import ConnectorSignal
+
+        blank = ConnectorSignal.parse(bytes(reg.VIDEO_SOURCE_RECORD_SIZE), 0)
+        assert not blank.has_signal
+        assert blank.to_dict()["refresh_hz"] is None
+
+
+class TestBlockReadsAreSingleRequests:
+    """A block must be read from its base in one request.
+
+    OBSERVED on a UHD Jr: the video-source array is served when read from its
+    base, but a request starting partway in is resolved as whatever register
+    lives at that address instead. 0x13010100 is such an address -- standalone
+    it returns what look like pointers -- so a read chunked at the default 256
+    bytes silently drops record 8 onwards and the array looks one record short.
+
+    The simulator's register file is flat and cannot reproduce that, so this
+    asserts the property that protects against it: one request, not several.
+    """
+
+    @pytest.fixture()
+    def server(self):
+        s = SimulatedController("127.0.0.1", 0, model_id=0x6205)
+        s.serve_in_thread()
+        yield s
+        s.shutdown()
+        s.server_close()
+
+    def test_the_connector_array_is_fetched_in_one_frame(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            server.log.clear()
+            controller.read_connector_signals(count=12)
+        reads = [
+            p for p in server.log
+            if p.io == IO.READ and p.address == reg.VIDEO_SOURCE_STATE
+        ]
+        assert len(reads) == 1, f"array split across {len(reads)} requests"
+        assert reads[0].length == 12 * reg.VIDEO_SOURCE_RECORD_SIZE
+
+    def test_no_request_starts_partway_into_the_array(self, server) -> None:
+        host, port = server.address
+        with Controller.connect(host, port, timeout=1.0) as controller:
+            server.log.clear()
+            controller.read_connector_signals(count=12)
+        base = reg.VIDEO_SOURCE_STATE
+        span = 12 * reg.VIDEO_SOURCE_RECORD_SIZE
+        inside = [p for p in server.log if base < p.address < base + span]
+        assert not inside, f"request(s) starting mid-array: {inside}"

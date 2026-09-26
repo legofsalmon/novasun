@@ -20,9 +20,34 @@ python -m novasun monitor 192.168.1.40           # temperature, humidity, voltag
 python -m novasun coex snapshot 192.168.1.40     # is this a COEX box? then dump it
 ```
 
-Record what the discovery reply actually contains — the current implementation
-keeps only the source address and prints the rest as a raw tail, and there is
-probably model and name information in there worth parsing properly.
+The discovery reply has since been captured: `rpProMI:App,0161`, sixteen bytes,
+whose 8-byte ASCII tail carries **neither a model ID nor a device name**.
+Identification has to come from the register bus. An earlier version of this
+note said there was "probably model and name information in there worth parsing
+properly"; that guess was unevidenced and turned out to be wrong. Replies are
+**unicast** to the requester, so a passive listener never sees them.
+
+
+## Counting a sweep honestly
+
+**Count distinct responses, not bytes requested.** Reading sequentially past a
+region's real extent does not fail on this firmware: it returns the previous
+response. A 64 KB sweep of a 1 KB region therefore reads that kilobyte once and
+echoes it 63 times, then reports 64 KB of coverage.
+
+This is not hypothetical. Two sweeps recorded as 131,072 and 212,992 bytes
+returned 16 and 9 distinct kilobyte responses respectively — 12.5% and 4.3%. A
+negative result stated in bytes requested overstates its own strength by roughly
+an order of magnitude, which is a provenance failure of exactly the kind this
+repository exists to prevent.
+
+```python
+chunks = [buf[i:i + CHUNK] for i in range(0, len(buf), CHUNK)]
+print(f"{len(set(chunks))} distinct of {len(chunks)} responses")
+```
+
+Run that on any sweep before quoting a coverage figure from it. If a region's
+chunks are all identical, you read it once.
 
 ## Observing a session
 

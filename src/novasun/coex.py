@@ -390,11 +390,75 @@ def snapshot(client: CoexClient, endpoints: dict[str, str] | None = None) -> dic
     return result
 
 
+#: Fields that identify an element of a list, tried in order; a tuple is a
+#: compound key. An element is matched by the first of these that every
+#: element in both lists carries with distinct values.
+IDENTITY_KEYS: tuple[Any, ...] = (
+    "cabinetID", "rvCardID", "id", "presetUUID", "screenID", "screenGroupID",
+    "controllerPortID", "powerID", "fanName", ("outputCardID", "outputID"),
+    ("inputCardID", "portID"),
+)
+
+
+def _identity_by(item: Any, key: Any) -> Any:
+    """``item``'s identity under one strategy, or ``None`` if it has none."""
+    if not isinstance(item, dict):
+        return None
+    if key == "__nested__":
+        # The real MX40 Pro's monitor/info.cabinets[] carry cabinetID: 0 on
+        # every entry and are identified only by the cabinetID on their
+        # rvCards[]. A nested list's identity is the tuple of its elements'.
+        for name, child in item.items():
+            if isinstance(child, list) and child and all(isinstance(c, dict) for c in child):
+                for inner in IDENTITY_KEYS:
+                    ids = [_identity_by(c, inner) for c in child]
+                    if all(i is not None for i in ids) and len(set(ids)) == len(ids):
+                        return (name, tuple(ids))
+        return None
+    names = key if isinstance(key, tuple) else (key,)
+    if all(name in item for name in names):
+        return (key, tuple(repr(item[name]) for name in names))
+    return None
+
+
+def _aligned(before: list[Any], after: list[Any]) -> dict[Any, tuple[int | None, int | None]] | None:
+    """Map identity -> (index in before, index in after), or None if unkeyed.
+
+    The key is a property of the *list*, not of an element: the first strategy
+    under which every element on both sides has an identity and no two share
+    one. A key that is present but not distinct -- cabinetID: 0 on every entry
+    -- is skipped, not trusted.
+    """
+    if not (before or after) or not all(isinstance(x, dict) for x in before + after):
+        return None
+    for key in IDENTITY_KEYS + ("__nested__",):
+        ids_b = [_identity_by(x, key) for x in before]
+        ids_a = [_identity_by(x, key) for x in after]
+        if any(i is None for i in ids_b + ids_a):
+            continue
+        if len(set(ids_b)) != len(ids_b) or len(set(ids_a)) != len(ids_a):
+            continue
+        table: dict[Any, tuple[int | None, int | None]] = {i: (n, None) for n, i in enumerate(ids_b)}
+        for n, i in enumerate(ids_a):
+            table[i] = (table[i][0] if i in table else None, n)
+        return table
+    return None
+
+
 def diff_snapshots(before: Any, after: Any, path: str = "") -> list[tuple[str, Any, Any]]:
     """Recursively compare two snapshots; returns ``(path, before, after)``.
 
     Monitoring fields drift on their own (temperatures, uptimes), so expect
     noise and read the diff for what changed *structurally*.
+
+    Lists of identifiable elements are aligned **by identity, not position**.
+    OBSERVED on an MX40 Pro: ``monitor/info.cabinets[]`` comes back in a
+    different order on every call -- all 288 entries moved between two
+    snapshots taken 35 minutes apart, with the same ids and the same per-id
+    values. A positional diff reported 1,974 changes; keyed by id there were
+    forty-one one-degree temperature flickers. Elements present on only one
+    side are reported as ``__absent__``; the index in ``path`` is the element's
+    position in ``before`` (or in ``after`` for additions).
     """
     changes: list[tuple[str, Any, Any]] = []
     if isinstance(before, dict) and isinstance(after, dict):
@@ -409,8 +473,20 @@ def diff_snapshots(before: Any, after: Any, path: str = "") -> list[tuple[str, A
     elif isinstance(before, list) and isinstance(after, list):
         if len(before) != len(after):
             changes.append((f"{path}[]", f"{len(before)} items", f"{len(after)} items"))
-        for index, (old, new) in enumerate(zip(before, after)):
-            changes.extend(diff_snapshots(old, new, f"{path}[{index}]"))
+        table = _aligned(before, after)
+        if table is None:
+            for index, (old, new) in enumerate(zip(before, after)):
+                changes.extend(diff_snapshots(old, new, f"{path}[{index}]"))
+        else:
+            for _identity, (ib, ia) in sorted(
+                table.items(), key=lambda kv: (kv[1][0] is None, kv[1][0] or 0, kv[1][1] or 0)
+            ):
+                if ib is None:
+                    changes.append((f"{path}[{ia}]", "__absent__", after[ia]))
+                elif ia is None:
+                    changes.append((f"{path}[{ib}]", before[ib], "__absent__"))
+                else:
+                    changes.extend(diff_snapshots(before[ib], after[ia], f"{path}[{ib}]"))
     elif before != after:
         changes.append((path, before, after))
     return changes
