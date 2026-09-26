@@ -143,8 +143,9 @@ MX40_LIKE_SCREENS = {
 # --- An MX30's HTTP API, in miniature ----------------------------------------
 #
 # The structure below is the OBSERVED response shape of one NovaStar MX30 --
-# firmware v1.5.1 as reported by the operator, not read over the API; no field
-# the API returned names the controller model or firmware -- read once after a
+# firmware v1.5.1 as reported by the operator at the time, and read over SNMP
+# as V1.5.1 later that day (tests/fixtures/mx30_snmp_walk.json); no field the
+# HTTP API returned names the controller model or firmware -- read once after a
 # show on 2026-09-26 through HTTP GETs only, with every value that could
 # identify the show replaced: three cabinets instead of 72, synthetic ids and
 # UUIDs, a made-up controller name, empty receiving-card remarks, generic page
@@ -600,8 +601,8 @@ MX30_LIKE_DEVICE_INPUT = {
 }
 
 MX30_LIKE_ABOUT = (
-    "The COEX HTTP API as OBSERVED on one NovaStar MX30 -- firmware v1.5.1 as reported by the "
-    "operator, not read over the API -- on 2026-09-26, read once after a show through HTTP GETs "
+    "The COEX HTTP API as OBSERVED on one NovaStar MX30 -- firmware v1.5.1, reported by the "
+    "operator and later read over SNMP (no HTTP field carries it) -- on 2026-09-26, read once after a show through HTTP GETs "
     "only: real response structure and key spellings, synthetic values. The unit drove 72 cabinets "
     "on three of its ten type-0 outputs (REASONED: the RJ45 ports; output type codes are "
     "unconfirmed). Three cabinets stand in for 72 -- the chain-position-0 cabinet of each populated "

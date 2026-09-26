@@ -392,6 +392,16 @@ MODELS: dict[int, DeviceProfile] = {
     0x0101: DeviceProfile("Controller", Family.SENDING_CARD, 0x0101, 4),
 }
 
+#: What hardware has said about the COEX port counts below; see ``PROVENANCE``
+#: under ``"coex:<model>"`` for the evidence. Every count without an entry is
+#: from product documentation and unverified.
+COEX_PORT_NOTES = {
+    "MX30": "Ethernet port count OBSERVED on one MX30 (V1.5.1, 2026-09-26); "
+    "RJ45 REASONED",
+    "MX40 Pro": "port count 4 is from product documentation and CONTRADICTED: one "
+    "MX40 Pro carried cabinets on 6 outputs (2026-09-11); true count not observed",
+}
+
 #: COEX controllers are identified by the HTTP API, not by model ID, and their
 #: inputs are read from ``/api/v1/device/input/sources`` at runtime -- which is
 #: why `inputs` is empty here. Display-mode values follow the HTTP API's own
@@ -405,10 +415,13 @@ COEX_MODELS: dict[str, DeviceProfile] = {
         http_api=True,
         presets=True,
         display=DisplayControl(None, normal=0, blackout=1, freeze=2),
+        notes=COEX_PORT_NOTES.get(name, ""),
     )
     for name, ports in {
+        # Left at the documented 4 although contradicted: no number was read,
+        # and a guessed one would be worse (COEX_PORT_NOTES).
         "MX40 Pro": 4,
-        "MX30": 2,
+        "MX30": 10,  # OBSERVED 2026-09-26 (COEX_PORT_NOTES)
         "MX20": 2,
         "MX2000 Pro": 20,
         "MX6000 Pro": 20,
@@ -422,9 +435,11 @@ COEX_MODELS: dict[str, DeviceProfile] = {
 #: model. Family and control path are certain -- only the HTTP API on 8001
 #: answers like this -- but ``name`` is a placeholder, not a model, and
 #: ``model_known`` is False. **The four ports are an assumption**, not a
-#: reading: MX40 Pro and CX40 Pro have four, MX30 and MX20 two, MX2000 Pro and
-#: MX6000 Pro twenty, and a controller whose operator has renamed it could be
-#: any of them. Consumers report the count as unknown rather than as four.
+#: reading: the table gives MX40 Pro and CX40 Pro four (the MX40 Pro's
+#: contradicted by one unit), MX30 ten (OBSERVED on one unit), MX20 two, MX2000
+#: Pro and MX6000 Pro twenty, and a controller whose operator has renamed it
+#: could be any of them. Consumers report the count as unknown rather than as
+#: four.
 GENERIC_COEX = DeviceProfile(
     "COEX controller",
     Family.COEX,
@@ -443,7 +458,17 @@ PROVENANCE = {
     0x6205: "model ID and port count decompiled; connectors from the product "
     "specification; input select codes unknown",
     "others": "decompiled NSCardType / GetPortNumber -- unverified on hardware",
-    "coex": "product documentation; identified by HTTP probe, inputs read at runtime",
+    "coex": "product documentation; identified by HTTP probe, inputs read at "
+    "runtime. Port counts from product documentation and unverified, except "
+    "where a 'coex:<model>' entry says otherwise",
+    "coex:MX30": "port_count 10: OBSERVED 2026-09-26 on one MX30, firmware "
+    "V1.5.1 -- SNMP ETHERNET_PORT_COUNT = 10 on output card 1, and 10 type-0 "
+    "entries in HTTP monitor/info outputStatus; that they are the RJ45 ports "
+    "is REASONED. Replaces the earlier 2, which no unit had confirmed",
+    "coex:MX40 Pro": "port_count 4 from product documentation, CONTRADICTED: "
+    "the MX40 Pro read 2026-09-11 carried its cabinets on 6 outputs "
+    "(OBSERVED). Its true port count was not observed, so the value is left "
+    "unchanged rather than replaced by a guess",
 }
 
 

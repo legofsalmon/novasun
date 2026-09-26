@@ -2,7 +2,7 @@
 
 On the MX40 Pro read in 2026-09 ``monitor/info.name`` was ``"MX40 Pro_<digits>"``
 and happened to carry the model. On an MX30 (2026-09-26; firmware v1.5.1 as
-reported by its operator) the same field was a plain word with no model in it,
+reported by its operator, and read over SNMP later that day) the same field was a plain word with no model in it,
 and every read-only path -- survey, watch, identify -- reported that word *as
 the model*, with four Ethernet ports assumed alongside (OBSERVED, one unit).
 The API documents a custom-name setter, so the field is best read as an

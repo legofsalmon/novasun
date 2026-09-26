@@ -1,12 +1,13 @@
 """The COEX simulator's MX30-like firmware profile.
 
-Pins the shapes OBSERVED on one MX30 (firmware v1.5.1, operator-reported) on
-2026-09-26, read-only, so a consumer developed against the simulator meets the
-surface that unit presented -- above all that an absent endpoint answers an
-empty HTTP 200 rather than a 404, which the read-only client turns into ``{}``
-without a word. Every value here is synthetic. The MX40 Pro default is
-asserted unchanged alongside: one unit of each was read, and the simulator
-must not blur them.
+Pins the shapes OBSERVED on one MX30 (firmware V1.5.1, read over SNMP) on
+2026-09-26, so a consumer developed against the simulator meets the surface
+that unit presented -- above all that an absent endpoint answers an empty HTTP
+200 rather than a 404, which the read-only client turns into ``{}`` without a
+word. The read-only pass sent GETs only; the two writes sent later that day
+(snmpstate and hw/colorBeacon, with VMP closed) are pinned in ``TestWrites``.
+Every value here is synthetic. The MX40 Pro default is asserted unchanged
+alongside: one unit of each was read, and the simulator must not blur them.
 """
 
 from __future__ import annotations
@@ -30,7 +31,12 @@ from novasun.coexsim import (
     CoexState,
     SimulatedCoexController,
 )
-from novasun.monitor import CoexMonitor, interpret_monitor_info
+from novasun.monitor import (
+    CoexMonitor,
+    ReadOnlyCoexClient,
+    WriteAttempted,
+    interpret_monitor_info,
+)
 
 CORS = {"vary": "Origin", "access-control-allow-origin": "*",
         "access-control-allow-credentials": "true"}
@@ -57,6 +63,24 @@ def raw_get(server, path: str) -> tuple[int, dict[str, str], bytes]:
         return response.status, {k.lower(): v for k, v in response.getheaders()}, response.read()
     finally:
         connection.close()
+
+
+def raw_put(server, path: str, body: object) -> tuple[int, dict[str, str], bytes]:
+    """A PUT with a JSON body, returning what the wire carried."""
+    host, port = server.address
+    connection = http.client.HTTPConnection(host, port, timeout=2.0)
+    try:
+        connection.request("PUT", path, body=json.dumps(body).encode(),
+                           headers={"Content-Type": "application/json"})
+        response = connection.getresponse()
+        return response.status, {k.lower(): v for k, v in response.getheaders()}, response.read()
+    finally:
+        connection.close()
+
+
+SNMPSTATE = "/api/v1/device/snmpstate"
+BEACON = "/api/v1/device/hw/colorBeacon"
+SUCCESS_EMPTY_DATA = {"code": 0, "data": "", "message": "Success"}
 
 
 @pytest.fixture()
@@ -381,7 +405,96 @@ class TestReadOnlyMonitor:
         assert "71/72 online" in snapshot.summary()
 
 
+class TestWrites:
+    """The two writes the MX30 was sent on 2026-09-26, as it answered them."""
+
+    def test_set_snmp_flips_the_state_and_the_get_reads_it_back(self, client, mx30) -> None:
+        assert client.snmp_state() == {"state": False}  # off, as the unit was
+        client.set_snmp(True)
+        assert mx30.state.snmp_enabled is True
+        assert client.snmp_state() == {"state": True}
+        client.set_snmp(False)
+        assert client.snmp_state() == {"state": False}
+        client.set_snmp(True)
+        client.set_snmp(True)  # idempotent
+        assert client.snmp_state() == {"state": True}
+
+    def test_set_snmp_sends_the_state_key(self, client, mx30) -> None:
+        client.set_snmp(True)
+        client.set_snmp(False)
+        puts = [(path, body) for method, path, body in mx30.state.requests if method == "PUT"]
+        assert puts == [(SNMPSTATE, {"state": True}), (SNMPSTATE, {"state": False})]
+
+    def test_the_old_value_body_answers_success_and_changes_nothing(self, client, mx30) -> None:
+        # The W1 trap: no exception, a Success envelope, and no change. Only
+        # a read-back shows it.
+        assert client.request("PUT", SNMPSTATE, {"value": True}) == ""
+        assert client.snmp_state() == {"state": False}
+        client.set_snmp(True)
+        assert client.request("PUT", SNMPSTATE, {"value": False}) == ""
+        assert client.snmp_state() == {"state": True}
+
+    @pytest.mark.parametrize("body", [{}, {"value": True}, {"state": 1}, {"state": "true"},
+                                      {"enable": True}, [True], None])
+    def test_any_body_without_a_boolean_state_is_ignored(self, mx30, body) -> None:
+        status, headers, raw = raw_put(mx30, SNMPSTATE, body)
+        assert status == 200 and headers["content-type"] == "application/json"
+        assert json.loads(raw) == SUCCESS_EMPTY_DATA
+        assert mx30.state.snmp_enabled is False
+
+    def test_the_put_reply_is_the_full_success_envelope(self, mx30) -> None:
+        status, headers, raw = raw_put(mx30, SNMPSTATE, {"state": True})
+        assert status == 200 and headers["content-type"] == "application/json"
+        assert int(headers["content-length"]) == len(raw)
+        assert json.loads(raw) == SUCCESS_EMPTY_DATA  # data is "", not null
+        assert {k: headers[k] for k in CORS} == CORS
+        assert mx30.state.snmp_enabled is True
+
+    def test_identify_controller_gets_the_empty_200(self, client, mx30) -> None:
+        for value in (True, False):
+            status, headers, raw = raw_put(mx30, BEACON, {"value": value})
+            assert (status, headers["content-length"], raw) == (200, "0", b"")
+            assert "content-type" not in headers
+            assert {k: headers[k] for k in CORS} == CORS
+        # Silent through the client: request() returns {} and the method None.
+        assert client.identify_controller(True) is None
+        assert client.request("PUT", BEACON, {"value": False}) == {}
+        # Whether the beacon lit is UNKNOWN, so nothing is modelled as changing.
+        assert client.snmp_state() == {"state": False}
+        assert [p for m, p, _b in mx30.state.requests if m == "PUT"] == [BEACON] * 4
+
+    def test_an_unknown_put_path_keeps_not_support(self, client) -> None:
+        # A PUT to a made-up path was never tried on the MX30: the simulator
+        # keeps its NotSupport convention there, so colorBeacon's empty 200 is
+        # not evidence that the endpoint exists.
+        with pytest.raises(CoexError) as error:
+            client.request("PUT", "/api/v1/device/hw/no-such-put", {"value": True})
+        assert error.value.code == 6
+
+    def test_the_read_only_client_still_reaches_neither(self, mx30) -> None:
+        host, port = mx30.address
+        reader = ReadOnlyCoexClient(host, port, timeout=2.0)
+        for call in (lambda: reader.set_snmp(True), lambda: reader.identify_controller(True)):
+            with pytest.raises(WriteAttempted):
+                call()
+        assert reader.snmp_state() == {"state": False}
+        assert all(method == "GET" for method, _path, _body in mx30.state.requests)
+
+
 class TestMX40DefaultUnchanged:
+    def test_snmp_writes_are_not_modelled_on_the_default(self) -> None:
+        # What the MX40 Pro's firmware does with these PUTs is UNKNOWN: the
+        # default keeps NotSupport and its constant GET, whatever the flag.
+        with serving() as server:
+            host, port = server.address
+            client = CoexClient(host, port, timeout=2.0)
+            for call in (lambda: client.set_snmp(True), lambda: client.identify_controller(True)):
+                with pytest.raises(CoexError) as error:
+                    call()
+                assert error.value.code == 6
+            server.state.snmp_enabled = True
+            assert client.snmp_state() == {"state": False}
+
     def test_absent_endpoints_still_answer_404(self) -> None:
         with serving() as server:
             for path in MX40_ABSENT_GETS:

@@ -2,7 +2,8 @@
 
 tests/fixtures/mx40_like_api.json is the COEX HTTP API as OBSERVED on an MX40
 Pro, and tests/fixtures/mx30_like_api.json the same API as OBSERVED on one MX30
-(firmware v1.5.1, operator-reported), for consumers outside this repository --
+(firmware v1.5.1, operator-reported during that pass and read over SNMP
+later the same day), for consumers outside this repository --
 crewbox's video module reads the same controllers in TypeScript and has never
 met one. A fixture that drifts from the one these tests run against would hand
 them a shape nothing here verifies, so this pins the two together.

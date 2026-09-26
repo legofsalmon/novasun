@@ -13,11 +13,14 @@ and from what published clients expect, and the field names should be confirmed
 against hardware before an application depends on their exact spelling.
 
 The default reproduces the MX40 Pro read on 2026-09-11. ``CoexState(model="MX30")``
-selects instead what an MX30 (firmware v1.5.1, operator-reported) returned on
-2026-09-26 -- different absent-endpoint semantics, a fuller monitor/info and a
-readable wall geometry; see the MX30-like block below. One unit of each was
-read, so where the two differ the simulator does not say whether model or
-firmware is the cause.
+selects instead what an MX30 (firmware V1.5.1, read over SNMP) returned on
+2026-09-26 -- different absent-endpoint semantics, a fuller monitor/info, a
+readable wall geometry, and the two writes later sent to it: ``snmpstate``,
+which honours ``{"state": b}`` and answered Success to ``{"value": true}``
+without changing anything (the simulator treats every other body that way),
+and ``hw/colorBeacon``, which answers an empty 200. See the MX30-like block
+below. One unit of each was read, so where the two differ the
+simulator does not say whether model or firmware is the cause.
 
     python -m novasun.coexsim --port 8001
     python -m novasun.coexsim --port 8001 --model MX30
@@ -99,11 +102,20 @@ class CoexState:
     #: :data:`MX30_ABSENT_GETS` -- and any unknown path -- with an empty HTTP
     #: 200 carrying no Content-Type and no envelope, so code that takes
     #: "answered" as "exists" fails here rather than on site. A test that wants
-    #: one served removes it from the set. Only GETs consult either: no write
-    #: was ever sent to the MX30, and whether the PUT of displaymode exists on
-    #: the MX40 Pro's firmware is UNKNOWN, so the simulator still accepts it.
+    #: one served removes it from the set. Only GETs consult either. The
+    #: read-only pass sent the MX30 GETs only; a later session the same day,
+    #: with VMP closed, sent it two hw/colorBeacon PUTs and five snmpstate PUTs
+    #: (modelled in PUTS_MX30) and no other write. The PUT of displaymode was never sent
+    #: to either unit, and whether it exists is UNKNOWN, so the simulator still
+    #: accepts it on both profiles.
     missing_endpoints: set[str] | None = None
     absent_style: str | None = None  # "404" or "empty-200"
+    #: What ``GET /api/v1/device/snmpstate`` reports on the MX30-like profile,
+    #: set only by a PUT carrying ``{"state": <bool>}`` (OBSERVED: that body
+    #: flips the unit's state and the GET reads it back). Off by default, as
+    #: the unit was. The MX40-like default ignores it: its GET is the constant
+    #: ``False`` that unit returned, and its PUT behaviour is UNKNOWN.
+    snmp_enabled: bool = False
 
     def __post_init__(self) -> None:
         mx30 = self.mx30_like
@@ -259,6 +271,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0].rstrip("/")
         body = self._body()
         self.state.requests.append(("PUT", path, body))
+        if self.state.mx30_like and path in PUTS_MX30:
+            return PUTS_MX30[path](self, body)
         handler = PUTS.get(path)
         if handler is None:
             return self._not_supported()
@@ -476,8 +490,9 @@ def _presets(state: CoexState) -> dict[str, Any]:
 
 # --- MX30-like firmware profile, as OBSERVED on an MX30, 2026-09-26 ---------
 #
-# One unit, firmware v1.5.1 (operator-reported; no field read over the API
-# carries a controller model or firmware string), read only, after the show.
+# One unit, firmware V1.5.1 (read over SNMP on the same day; no field read over
+# the HTTP API carries a controller model or firmware string), read only, after
+# the show -- then, with VMP closed, sent the two writes in PUTS_MX30.
 # Selected with ``CoexState(model="MX30")``; the MX40-like shapes above stay
 # the default. Where the two units differ the simulator does not say whether
 # model or firmware is the cause -- one of each was read. Every value below is
@@ -984,11 +999,46 @@ GETS_MX30 = {
     "/api/v1/device/backup": lambda state: {"master": "", "backup": "", "masterName": "", "backupName": ""},
     "/api/v1/device/multifunc-card/detailinfo": lambda state: [],
     "/api/v1/device/hw/mode": lambda state: {"mode": 3},  # 3 on this unit too; meaning UNKNOWN
-    "/api/v1/device/snmpstate": lambda state: {"state": False},
+    "/api/v1/device/snmpstate": lambda state: {"state": state.snmp_enabled},
     "/api/v1/screen/cabinet/count": _mx30_cabinet_count,
     "/api/v1/device/input": _mx30_device_input,
 }
 
+
+def _mx30_put_snmpstate(handler: _Handler, body: Any) -> None:
+    """PUT snmpstate as the MX30 answered it (OBSERVED, 2026-09-26).
+
+    ``{"state": true|false}`` flipped the unit's state, twice in each
+    direction, and the GET read it back. ``{"value": true}`` answered the same
+    full Success envelope -- ``data`` an empty string -- and left the state as
+    it was (OBSERVED once). Any body without a boolean ``"state"`` is answered
+    that way here; that the firmware ignores such bodies in general is
+    REASONED from that one.
+    """
+    if isinstance(body, dict) and isinstance(body.get("state"), bool):
+        handler.state.snmp_enabled = body["state"]
+    handler._send(0, "Success", "")
+
+
+def _mx30_put_color_beacon(handler: _Handler, body: Any) -> None:
+    """PUT hw/colorBeacon: HTTP 200, no Content-Type, Content-Length 0.
+
+    OBSERVED for ``{"value": true}`` and ``{"value": false}`` on the MX30. It is
+    the reply that firmware gives GETs of absent endpoints; whether the
+    endpoint exists and whether the beacon lit are UNKNOWN, so no state is
+    modelled.
+    """
+    handler._empty_200()
+
+
+#: PUTs the MX30-like profile answers as the unit did, consulted before PUTS.
+#: A PUT to a made-up path was never tried on the MX30, so unknown PUT paths
+#: keep the NotSupport envelope -- a simulator convention, not an observation:
+#: do not read colorBeacon's empty 200 as proof that it exists.
+PUTS_MX30 = {
+    "/api/v1/device/snmpstate": _mx30_put_snmpstate,
+    "/api/v1/device/hw/colorBeacon": _mx30_put_color_beacon,
+}
 
 
 #: GETs the MX40-like default serves.

@@ -362,9 +362,11 @@ class TestRateLimiter:
 class TestSnmpOids:
     def test_indices_substitute_in_order(self) -> None:
         assert snmp.TEMPERATURE_POINT_VALUE.at(2) == "1.3.6.1.4.1.319.10.10.10.2.2.3"
+        # The per-port form the MX30 served (OBSERVED 2026-09-26); the documented
+        # per-card .M form is refused -- see tests/test_snmp.py.
         assert (
-            snmp.RECEIVING_CARD_TEMPERATURE_STATUS.at(1, 3, 17)
-            == "1.3.6.1.4.1.319.10.10.30.6.1.1.3.1.17"
+            snmp.RECEIVING_CARD_TEMPERATURE_STATUS.at(1, 3)
+            == "1.3.6.1.4.1.319.10.10.30.6.1.1.3.1"
         )
 
     def test_wrong_index_count_is_an_error(self) -> None:

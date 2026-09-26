@@ -26,7 +26,8 @@ Client: [`../src/novasun/coex.py`](../src/novasun/coex.py).
   and `/hw/mode` answered (the last reading `{"mode": 3}`, a value the manual
   does not list). An undocumented path was never tried on this unit, so what it
   does for one is UNKNOWN.
-- **OBSERVED on an MX30 (firmware v1.5.1, operator-reported; 2026-09-26):**
+- **OBSERVED on an MX30 (firmware v1.5.1 — operator-reported during the
+  read-only pass, read over SNMP as `V1.5.1` later the same day; 2026-09-26):**
   an absent path answers **HTTP 200 with `Content-Length: 0`** — no body, no
   JSON envelope, no `Content-Type` header (a real endpoint carries
   `Content-Type: application/json`). Three made-up paths did this, and so did
@@ -56,6 +57,23 @@ Client: [`../src/novasun/coex.py`](../src/novasun/coex.py).
   address. The response *shapes* of the GETs that answered are recorded in
   [`read-only-monitoring.md`](read-only-monitoring.md#over-coex-http-get) and
   differ from what the manual and published clients led this project to expect.
+- **A Success envelope on a PUT does not mean the change happened.** The only
+  PUTs this project has sent to COEX hardware went to that MX30 later the same
+  day, with VMP closed and the operator's go. `PUT /api/v1/device/snmpstate`
+  with `{"value": true}` answered HTTP 200, `Content-Type: application/json`,
+  `{"code":0,"data":"","message":"Success"}` — and a GET in the same second
+  still read `{"state": false}` (OBSERVED once; `{"value": false}` was never
+  sent). With **`{"state": true}`** the GET read `{"state": true}`, and
+  `{"state": false}` put it back — twice in each direction, with the SNMP agent
+  answering and falling silent to match (OBSERVED; the agent's answer after the
+  first enable is REASONED from timestamps). The setter's key mirrors the
+  getter's (REASONED). `CoexClient.set_snmp` sent `{"value": ...}` at the time,
+  so on this firmware it reported success and did nothing; where that body came
+  from is not recorded (it dates from commit `6c9cbd8`). The other setters in
+  `coex.py` that send `{"value": ...}` — `identify_controller`,
+  `set_automatic_time`, `set_controller_name`, `set_system_time`,
+  `set_timezone` — may be wrong the same way: REASONED, not tested. **Read the
+  value back after a PUT** (REASONED, from one endpoint).
 
 ```
 PUT http://192.168.1.10:8001/api/v1/device/screen/displaymode
@@ -136,10 +154,10 @@ useful core.
 | GET/PUT | `/api/v1/device/hw/deviceengineeringdocdata` | Export / import project file |
 | PUT | `/api/v1/device/hw/customname` | Rename controller (OFFICIAL). This is why `monitor/info.name` cannot carry the model: the MX40 Pro reported `MX40 Pro_<digits>`, the MX30 a single plain word (OBSERVED) — an operator label, most likely set here (REASONED). **No model can be read from `name`** (OBSERVED on the MX30, whose name carried none; as a rule, REASONED), and no other field read over HTTP gives the controller model or firmware — a numeric `modelId` 5138 recurs across the MX30's payloads, but what it identifies is UNKNOWN |
 | PUT | `/api/v1/device/hw/systemtime`, `/timezone`, `/time/enable` | Clock |
-| GET/PUT | `/api/v1/device/snmpstate` | SNMP on/off |
+| GET/PUT | `/api/v1/device/snmpstate` | SNMP on/off. GET `{"state": bool}` — false on both units as found (OBSERVED). **PUT body `{"state": bool}`** (OBSERVED on the MX30, twice each way, read back); `{"value": true}` answers a Success envelope and changes nothing (OBSERVED once). Turning SNMP on is a write, so a read-only consumer cannot |
 | GET | `/api/v1/device/multifunc-card/detailinfo` | Multifunction card status |
 | PUT | `/api/v1/device/backup`, `/backup/verify` | Primary/backup |
-| PUT | `/api/v1/device/hw/colorBeacon` | Identify the controller |
+| PUT | `/api/v1/device/hw/colorBeacon` | Identify the controller. On the MX30, `{"value": true}` and then `{"value": false}` each answered **HTTP 200, `Content-Length: 0`, no `Content-Type`, no envelope** (OBSERVED) — the shape that firmware gives an absent path on GET; a PUT to a made-up path was never tried, so the reply cannot tell existence either way. **Whether the endpoint exists and whether the LED lit are UNKNOWN** — nobody watched the chassis. The `{"value"}` body is untested against alternatives |
 
 Screen-level equivalents exist for most cabinet operations under
 `/api/v1/screen/...`, along with 3D LUT import, colour correction, canvas
@@ -150,10 +168,19 @@ mapping and scheduling.
 - **Central Control Protocol** — the register bus over TCP 5200, UDP 5201 or
   RS232, documented for the same controllers. Fewer capabilities, but the same
   commands work on much older hardware. See
-  [`protocol-register-bus.md`](protocol-register-bus.md).
+  [`protocol-register-bus.md`](protocol-register-bus.md). On the one MX30 tried
+  (V1.5.1, VMP closed), **TCP 5200 refused a connection** and one read frame on
+  UDP 5201 drew no reply in 3 s (OBSERVED once each). Whether Ethernet central
+  control is a setting, off by default, or opened while VMP runs is UNKNOWN.
+  Never open a session to a COEX controller on a live show regardless: it is
+  exclusive and displaces VMP's.
 - **SNMP** — NovaStar publishes a MIB for COEX monitoring, which is the right
   choice if the goal is integration with existing monitoring rather than
-  control.
+  control. Exercised once, on that MX30 after enabling it over this API: it
+  gives the controller **model and firmware, which no HTTP GET on either unit
+  has**, with quirks — no MIB-2 system group, x100 scaling, bitmask statuses,
+  `"ERROR: ..."` strings — recorded in
+  [`read-only-monitoring.md`](read-only-monitoring.md#the-oid-map-on-an-mx30-v151--exercised-once-2026-09-26).
 
 ## Caveats
 
@@ -181,6 +208,10 @@ mapping and scheduling.
   over seven minutes and a five-minute 1 Hz poll).
 - Nothing here is authenticated or rate-limited; a stray loop can hammer a live
   screen. Confirm the destructive calls in the UI.
+- **A PUT's Success is not confirmation.** One MX30 setter accepted a body with
+  the wrong key, said Success and did nothing (above). Where a getter exists,
+  read back; where none does (`colorBeacon`, whose reply is an empty 200), the
+  effect is unverified.
 - Cabinet IDs are large integers tied to the current project; re-import a
   project file and they can change. Resolve IDs at connect time rather than
   persisting them.

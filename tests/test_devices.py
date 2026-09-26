@@ -73,6 +73,40 @@ class TestProfiles:
         assert devices.coex_profile_for("MX2000 Pro_000001").name == "MX2000 Pro"
         assert devices.coex_profile_for("MX20_000001").name == "MX20"
 
+    def test_the_mx30_port_count_is_the_observed_ten(self) -> None:
+        """OBSERVED 2026-09-26 on one MX30 (V1.5.1): SNMP ETHERNET_PORT_COUNT = 10
+        and ten type-0 outputStatus entries. The table said 2."""
+        mx30 = devices.coex_profile_for("MX30")
+        assert mx30.name == "MX30" and mx30.model_known
+        assert mx30.port_count == 10
+        assert "OBSERVED" in mx30.notes and "REASONED" in mx30.notes  # RJ45 is REASONED
+        provenance = devices.PROVENANCE["coex:MX30"]
+        for fact in ("OBSERVED", "2026-09-26", "V1.5.1", "ETHERNET_PORT_COUNT",
+                     "outputStatus", "REASONED"):
+            assert fact in provenance, fact
+
+    def test_the_mx40_pro_count_is_flagged_not_changed(self) -> None:
+        """Contradicted by cabinets on six outputs, but no count was read: the
+        table keeps its documented value rather than a guess."""
+        mx40 = devices.coex_profile_for("MX40 Pro")
+        assert mx40.port_count == 4
+        assert "CONTRADICTED" in mx40.notes
+        assert "CONTRADICTED" in devices.PROVENANCE["coex:MX40 Pro"]
+        assert "not observed" in devices.PROVENANCE["coex:MX40 Pro"]
+
+    def test_the_other_coex_counts_are_untouched_and_unflagged(self) -> None:
+        expected = {"MX20": 2, "MX2000 Pro": 20, "MX6000 Pro": 20,
+                    "CX40 Pro": 4, "CX80 Pro": 8, "KU20": 2}
+        for name, ports in expected.items():
+            profile = devices.coex_profile_for(name)
+            assert (profile.name, profile.port_count, profile.notes) == (name, ports, ""), name
+        assert set(devices.COEX_PORT_NOTES) == {"MX30", "MX40 Pro"}
+
+    def test_the_port_note_reaches_the_summary(self) -> None:
+        summary = devices.Identification("127.0.0.1", devices.coex_profile_for("MX30")).summary()
+        assert "10x Ethernet" in summary and "(assumed)" not in summary
+        assert "OBSERVED" in summary
+
     def test_generic_coex_profile_is_an_assumption_not_a_reading(self) -> None:
         generic = devices.GENERIC_COEX
         assert generic.is_known and not generic.model_known

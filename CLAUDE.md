@@ -111,10 +111,11 @@ would have opened register-bus sessions to the controller. All four are fixed;
 the simulator now emits the observed shapes by default. VX4S is still
 document-and-simulator only.
 
-An **MX30** — firmware v1.5.1 by the operator's report; nothing read over HTTP
-gives model or firmware — was read the same way on 2026-09-26, unattended after
-a show with the wall still lit: two pings, about 950 GETs, two SNMP GETs, eight
-discovery probes, nothing else — no TCP 5200, no PUT. Two traps came out of it.
+An **MX30** — firmware v1.5.1, operator-reported at first and later read over
+SNMP; nothing read over HTTP gives model or firmware — was read the same way on
+2026-09-26, unattended after a show with the wall still lit: two pings, about
+950 GETs, two SNMP GETs, eight discovery probes; in that read-only pass nothing
+else — no TCP 5200, no PUT. Two traps came out of it.
 **Absent paths answer HTTP 200 with an empty body and no envelope** —
 documented and made-up paths alike, in the same ~2 ms as a real endpoint —
 where the MX40 Pro answered 404; only the missing envelope tells them apart,
@@ -125,6 +126,18 @@ plain word on this unit, not `MX30_<digits>`, so no model can be read from it
 `watch` and `identify` all reported the word as the model that day. The
 observed shapes, with synthetic values, are `tests/fixtures/mx30_like_api.json`.
 Scope: one unit, one firmware.
+
+Later that afternoon, **with VMP closed and the operator's explicit go**, the
+same MX30 took this project's only COEX writes — 2 `colorBeacon` PUTs and 5
+`snmpstate` PUTs, SNMP left off — its first SNMP walk, and a register-bus
+probe. **SNMP turns on with `{"state": true}`; `{"value": true}` answers
+Success and does nothing**, which is what `set_snmp` sent at the time, so read
+back after any PUT. SNMP gave model `MX30` and firmware `V1.5.1`, which HTTP
+does not; its quirks (no MIB-2 system group, x100 values (REASONED), bitmask
+statuses, `ERROR:` strings, role 1 on a standalone unit) are in
+`docs/read-only-monitoring.md`, the walk in
+`tests/fixtures/mx30_snmp_walk.json`. TCP 5200 refused and UDP 5201 stayed
+silent — one unit, one moment, VMP closed. That changes nothing below.
 
 **Neither COEX unit answered `rqProMI:` discovery** (OBSERVED on the MX40 Pro;
 the MX30 left eight probes unanswered), so `novasun discover` cannot find COEX

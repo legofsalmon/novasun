@@ -27,17 +27,30 @@ with the unit named:
   polled at 1 Hz for ten minutes after the show. Its firmware version is
   **UNKNOWN** — nothing read over the API carries one, and nobody wrote it down.
 - **MX30**, on a show network after the show, 2026-09-26, firmware **v1.5.1 as
-  reported by the operator** (not read over the API — no payload read carries a
-  controller firmware string). Read-only throughout: two ICMP pings, HTTP GETs
-  on 8001 (two eight-endpoint snapshots, ten further GETs, six `curl -i`, about
-  twenty-four from `survey`/`watch`/`identify` whose outcomes were not kept, and
-  900 from a five-minute 1 Hz poll), two `snmpget` attempts, eight `rqProMI:`
-  probes. No TCP 5200, no PUT or POST. Whether VMP was still attached is
-  **UNKNOWN**.
+  reported by the operator** at the time (no HTTP payload carries a controller
+  firmware string) and **read over SNMP later the same afternoon as `V1.5.1`**
+  (OBSERVED, below). The first pass was read-only throughout: two ICMP pings,
+  HTTP GETs on 8001 (two eight-endpoint snapshots, ten further GETs, six
+  `curl -i`, about twenty-four from `survey`/`watch`/`identify` whose outcomes
+  were not kept, and 900 from a five-minute 1 Hz poll), two `snmpget` attempts,
+  eight `rqProMI:` probes. In that pass: no TCP 5200, no PUT or POST, and
+  whether VMP was still attached is **UNKNOWN**.
+- **The same MX30, 16:50Z–16:55Z, with VMP closed by the operator** and the
+  operator's explicit go for writes — the only session in this project that
+  has written to a COEX unit. Sent: **2 `PUT hw/colorBeacon` and 5
+  `PUT snmpstate`**, the only writes (SNMP was left off); 32 snapshot GETs
+  through the read-only client and seven further `GET snmpstate` (a baseline,
+  five read-backs, one during the register-bus probe); SNMP v2c
+  with community `public` only — walks of the MIB-2 system group and of the
+  enterprise arc, and `sysDescr` GETs, every request with one retry; two TCP
+  connects to 5200; one 20-byte register-bus read frame to UDP 5201. What it
+  settled is in the SNMP recommendation below, §4's SNMP section and §4's
+  register-bus note.
 
 An OBSERVED fact here is a fact about the unit named, not yet about the fleet.
 **Every MX30 statement below is scoped to that one unit, that firmware and that
-afternoon (14:44Z–14:57Z)**; where the MX30 differs from the MX40 Pro, the
+afternoon (the read-only pass 14:44Z–14:57Z; the SNMP and register-bus session
+16:50Z–16:55Z, VMP closed)**; where the MX30 differs from the MX40 Pro, the
 earlier statement is kept and scoped rather than withdrawn, because both are
 observations. Where the two are compared, "the MX40 record" means this
 document plus the simulator's MX40-like shape in `coexsim.py`, not the reduced
@@ -76,12 +89,58 @@ Pro running a live show — `/api/v1/device/snmpstate` returned `{"state":
 false}`. SNMP was off, and a read-only consumer could not have turned it on. So
 the recommendation above is conditional on a precondition that did not hold on
 the first unit seen; in practice the HTTP GET path in §4 was the only
-monitoring available, which is why its field names being OBSERVED now matters
-more than the SNMP OID map, which remains unexercised.
+monitoring available, which is why its field names being OBSERVED mattered
+more than the SNMP OID map, which was then unexercised.
 
 **OBSERVED again, 2026-09-26:** the second COEX unit read, an MX30 on v1.5.1,
-returned the same `{"state": false}` in both snapshots. Two of two COEX units
-seen had SNMP off. The OID map is still unexercised on any hardware.
+returned the same `{"state": false}` in both snapshots of the read-only pass.
+Two of two COEX units seen had SNMP off as found, and at that point the OID map
+was still unexercised on any hardware.
+
+**Exercised once, later the same afternoon — OBSERVED on that MX30, V1.5.1, VMP
+closed.** With the operator's go, SNMP was switched on over HTTP, walked over
+v2c with community `public`, and switched off again. The agent answered at
+once, and the enterprise walk returned 170 values. What it gave, in short — the
+detail, with every label, is in §4 under [The OID map on an
+MX30](#the-oid-map-on-an-mx30-v151--exercised-once-2026-09-26):
+
+- **The controller's model and firmware** — `CONTROLLER_MODEL` `"MX30"`,
+  `CONTROLLER_FIRMWARE` `"V1.5.1"`. No HTTP GET on either COEX unit has given
+  either; of the surfaces seen, SNMP is the only one that does.
+- 44 of the 46 OIDs `snmp.py` transcribes, served — but several in forms the
+  document does not give: values scaled x100 (REASONED), 64-bit bitmasks where
+  the document says 0/1, `"ERROR: ..."` strings in place of numbers, and the
+  per-receiving-card status collapsed into **one bitmask per port**; the
+  documented per-card OIDs were absent from the walk.
+- **The MIB-2 system group is not served** (`sysDescr` drew `noSuchName`), so a
+  reachability probe must ask an enterprise OID.
+- `CONTROLLER_ROLE` read **1, "backup" in the document, on a unit running the
+  wall alone**. Do not display "backup" from it.
+
+So the recommendation survives contact with one unit, with conditions: every
+item the second bullet above lists was served in some form (OBSERVED; that the
+health and link items mean what they say rests on reading the bitmasks bit by
+bit, REASONED), but not "more than the HTTP API" — on that unit each surface
+gave something the other did not (§4) — receiving-card status arrives per port
+rather than per card, and a consumer has to handle every quirk in §4 before its
+numbers mean anything. Traps were not tried; that the controller pushes them is
+still OFFICIAL only.
+
+**Enabling it is a write, and the body matters — OBSERVED on the MX30,
+V1.5.1.** `PUT /api/v1/device/snmpstate` with **`{"state": true}`** turned the
+agent on and `{"state": false}` off again, twice in each direction, each time
+read back by `GET snmpstate`. **`{"value": true}` answered HTTP 200 with a full
+`{"code":0,"data":"","message":"Success"}` envelope and changed nothing** — the
+GET in the same second still read `{"state": false}` (OBSERVED once; the
+`false` direction was never sent). This repository's `CoexClient.set_snmp`
+sent `{"value": ...}` at the time, so it reported success while doing nothing.
+The lesson is wider than one endpoint, though it rests on one: **a Success
+envelope on a PUT does not mean the change happened; read the value back**
+(REASONED). None of this is crewbox's to do — it cannot write — but the GET is
+the part it reads, and it held up: each read-back that was checked against the
+agent matched it — answered after `true`, timed out after `false` (OBSERVED
+after the second enable and after both disables; that the agent answered after
+the first enable is REASONED from timestamps).
 
 ---
 
@@ -290,7 +349,10 @@ the layout goes in there and this section gets rewritten.
 monitoring pane from pure observation, and worth the capture. **If they do not**,
 the fallbacks are: identity over SNMP (`CONTROLLER_MODEL`, `CONTROLLER_NAME`,
 `CONTROLLER_SERIAL`, `CONTROLLER_IP`), or a model-ID read on the register bus,
-which needs a control session.
+which needs a control session. The SNMP fallback has now been seen to work,
+once: an MX30 with SNMP switched on served all four, and its firmware (§4,
+OBSERVED) — but only while SNMP was on, which it was not on either COEX unit
+as found.
 
 To capture one, with hardware:
 
@@ -375,9 +437,10 @@ same on an MX30.
 
 ### Five minutes at 1 Hz on an MX30 — OBSERVED, controller side, second unit
 
-Repeated on 2026-09-26 against the MX30 (v1.5.1, operator-reported), after the
-show with the wall still lit: the same three GETs per tick — `monitor/info`,
-`input/sources`, `backup` — with the same 4 s timeout, for 300 ticks.
+Repeated on 2026-09-26 against the MX30 (v1.5.1 — operator-reported at the
+time, read over SNMP later that afternoon), after the show with the wall still
+lit: the same three GETs per tick — `monitor/info`, `input/sources`, `backup` —
+with the same 4 s timeout, for 300 ticks.
 
 | | |
 |---|---|
@@ -449,7 +512,11 @@ at 1 Hz, polling at 0.05 Hz is not going to be the thing that breaks a show.
 
 ## 4. What monitoring is available over GET alone?
 
-Two surfaces. **SNMP is richer**; the HTTP API is easier to consume.
+Two surfaces. **SNMP is richer on paper**; the HTTP API is easier to consume.
+On the one unit where both were read, each gave something the other did not
+(OBSERVED, one MX30): SNMP the controller's model and firmware, HTTP per-card
+temperature and voltage *values*, cabinet ids and positions, where SNMP gave
+per-port status bits.
 
 ### Over SNMP GET — **OFFICIAL**, from the SNMP document
 
@@ -480,6 +547,129 @@ input-card level), and brightness read-back.
 `N`/`Y`/`M` are 1-based indices bounded by the corresponding count OID.
 `snmp.Oid.at(...)` substitutes them.
 
+### The OID map on an MX30, V1.5.1 — exercised once, 2026-09-26
+
+The first time this project's OID map met hardware. Scope: **one MX30, firmware
+V1.5.1, VMP closed by the operator**, SNMP switched on over HTTP for the purpose
+and off again afterwards (16:50Z–16:52Z). SNMPv2c with community `public` —
+nothing else was ever sent. Asked: walks of the MIB-2 system group
+`1.3.6.1.2.1.1` (v2c then v1) after the first enable; a GET of `sysDescr`, a
+walk of the system group and **one walk of the enterprise arc
+`1.3.6.1.4.1.319`** after the second; a `sysDescr` GET after each disable.
+Everything in the table is from that one walk. **Other communities, and v1
+against the enterprise arc, are UNKNOWN** — not tried.
+
+The whole walk is
+[`tests/fixtures/mx30_snmp_walk.json`](../tests/fixtures/mx30_snmp_walk.json):
+every OID with its type and value, real structure and numbers, and synthetic
+serial, MAC, IP, controller label, screen name and controller time. Values are
+as net-snmp decoded them; **the wire BER encoding of the Counter64 values was
+not captured and is UNKNOWN**, which matters to crewbox (below).
+
+**The walk: 170 values, then `endOfMibView` after `…319.10.200.6`** — nothing
+is served past it (OBSERVED). 102 INTEGER, 42 STRING, 24 Counter64 and two
+empty OCTET STRINGs (the two card names). Gaps: `…10.10.20.4.1.2`,
+`…10.10.30.4.1.2`, `…10.20.1.2.1.8`. **44 of the 46 OIDs `snmp.py` transcribes
+are served**; the two absent are the per-card receiving-card status forms.
+
+| Item | On the MX30 | Confidence |
+|---|---|---|
+| `CONTROLLER_MODEL`, `CONTROLLER_FIRMWARE` | `"MX30"`, `"V1.5.1"`; input- and output-card firmware also `"V1.5.1"` | OBSERVED. **The first reading of either from the device**; it confirms the operator's report. No HTTP GET on either COEX unit gives either |
+| `CONTROLLER_NAME`, `_SERIAL`, `_MAC`, `_IP` | served; show-specific, masked in the evidence | OBSERVED. That the name equals `monitor/info.name` was checked before masking and cannot be re-checked from what was kept |
+| `CONTROLLER_TIME` | `"YYYY-MM-DD HH:MM:SS"`, one hour ahead of UTC when read | OBSERVED; that UTC+1 is the controller's zone rather than a misset clock is REASONED |
+| `CONTROLLER_ROLE` | **1** — "backup" in the document — on a unit whose `/device/backup` is four empty strings and which drove the wall alone. Output- and input-card roles 0 | OBSERVED value, **meaning UNKNOWN. Do not display "backup" from this OID alone** |
+| `TEMPERATURE_POINT_VALUE` | 3100 — one point, "Main_board Temperature", status 0 | OBSERVED value. **x100, so 31.00 °C, is REASONED**: HTTP read the main board at 32 °C, at a different time. Whether SNMP resolves finer than 1 °C is UNKNOWN — 3100 carries no sub-degree information |
+| `VOLTAGE_POINT_VALUE` | 1156 — one point | OBSERVED value; x100, so 11.56 V, is REASONED — it equals HTTP `mainBoardVoltage` 11.56 exactly |
+| `SCREEN_FRAME_RATE`, `SCREEN_SYNC_FRAME_RATE` | 5000, 5000 | OBSERVED; x100, so 50.00 Hz, is REASONED (HTTP `masterFrameRate` 50) |
+| `SCREEN_BRIGHTNESS` | the STRING `"50.0"` | OBSERVED; percent is REASONED (HTTP `/device/cabinet` `brightness` 0.5) |
+| Fans | `FAN_COUNT` 3; names equal to HTTP `fanInfos` ("Chassis Fan 1", "FPGA Fan", "Chassis Fan 2"); `FAN_STATUS` 0, 0, 0. Undocumented `…10.10.10.6.N.3` = 3799, 2783, 3689 | OBSERVED; `.N.3` = rpm is REASONED, only from closeness to HTTP `fanSpeed` |
+| `OUTPUT_SLOT_STATUS`, `INPUT_SLOT_STATUS` | Counter64 `0xFFFFFFFFFFFFFFFE` — bit 0 clear | OBSERVED structure, where the document says 0/1. One bit per slot, LSB = slot 1, the documented enum per bit (0 = connected) is **REASONED**; on that reading slot 1 is present |
+| `ETHERNET_PORT_COUNT` | **10**, on output card 1 | OBSERVED — with the ten type-0 `outputStatus` entries over HTTP, ten Ethernet ports on this MX30 (RJ45 is REASONED) |
+| `ETHERNET_PORT_STATUS` | Counter64 `0xFFFFFFFFFFFFFFE0` — bits 0–4 clear | OBSERVED structure; per-bit, ports 1–5 up, is REASONED. That is **link, not cabinets**: cards hang on ports 1, 3 and 5 only, and HTTP `linkStatus` was true on exactly the five outputs 2048–2052 |
+| `ETHERNET_PORT_SPEED` | 0, with five links up | OBSERVED; meaning UNKNOWN |
+| `RECEIVING_CARDS_ONLINE` (`…10.10.30.5.1.4.Y.1`) | INTEGER **24** on ports 1, 3 and 5; on the other seven the STRING **`"ERROR: there are no cabinets in port "`** — trailing space, no port number | OBSERVED. The sum, 72, equals undocumented `…10.10.30.4.1.5` and HTTP `cabinet/count`. SNMP port Y = HTTP `outputID` 2048 + (Y − 1) is REASONED, from which ports carry cabinets and which are linked |
+| Receiving-card temperature / voltage status | The documented per-card forms `…10.10.30.6.N.1.Y.1.M` and `.Y.2.M` are **absent from the walk** (none of 240 possible each; no direct GET was sent). Instead `…10.10.30.6.1.1.Y.1` and `.Y.2` are one Counter64 per port, identical to each other: `0xFFFFFFFFFF000000` on ports 1, 3 and 5, all ones on the other seven | OBSERVED structure. **One bit per card, unused bits set, is REASONED** — the 24 clear bits are on exactly the ports with 24 cards. With every card normal, "0 = normal" cannot be told from "0 = present"; bit order within the 24 is UNKNOWN |
+| Inputs | `INPUT_SLOT_COUNT` 1; `INPUT_SOURCE_COUNT` **5**, types `"HDMI2.0 "`, `"HDMI1.4 "`, `"DP1.1 "`, `"3G-SDI "`, `"3G-SDI "` — **strings with a trailing space**, not the document's integer enum; `INPUT_SOURCE_SIGNAL` 1, 0, 0, 0, 0 | OBSERVED, matching HTTP `sourceStatus`. **The internal generator HTTP lists as a sixth source is absent.** Undocumented `…10.10.20.5.1.2.Y.3` = 0, 2, 2, 2, 2, meaning UNKNOWN |
+| Screen | `SCREEN_COUNT` 1; width 1536, height 768 (the HTTP canvas); sync type 0. Undocumented `…10.20.1.2.1.1` is the screen name (show data); `.9`/`.10` = 1920/1080; `.11` 0; `.12` 500 | OBSERVED; `.9`/`.10` = the active input's resolution is REASONED; `.11`, `.12` UNKNOWN |
+| `OUTPUT_CARD_NAME`, `INPUT_CARD_NAME` | served, as **empty strings** | OBSERVED |
+| Light sensor (undocumented `…10.10.10.12.1`, `.2`) | `"ERROR: ..."` strings | OBSERVED |
+
+What a consumer has to handle — the rules are REASONED from the one walk:
+
+- **Probe reachability with an enterprise OID.** The MIB-2 **system group is
+  not served**: a v2c GET of `sysDescr` (`1.3.6.1.2.1.1.1.0`) drew error-status
+  `noSuchName` — a v1-style error inside a v2c reply, as net-snmp reports it —
+  and walks of `1.3.6.1.2.1.1` came back empty (OBSERVED). Other MIB-2 groups
+  were not walked (UNKNOWN; do not read this as "MIB-2 is not served"). Ask
+  `CONTROLLER_MODEL`, not `sysDescr` or `sysUpTime`. And given a v1-style
+  error-status, one absent OID in a multi-varbind GET may void the whole batch
+  (REASONED; only a single-OID GET was observed), so keep anything that might
+  be absent out of the batch that decides reachability.
+- **A string beginning `ERROR:` is absent data.** Nine values carried one:
+  seven empty ports in `RECEIVING_CARDS_ONLINE` and the two light-sensor
+  values. A column typed as a number must accept one.
+- **Scale before display** — temperature, voltage and frame rates by 100.
+- **Decode status masks bit by bit; never compare them with 0 or 1.** A mask
+  read as one integer is "not 0", so a naive reader calls a present slot
+  disconnected and a linked port abnormal.
+- **The types differ from the transcription** (OBSERVED). Against `snmp.py` as
+  it stood before this walk: `OUTPUT_CARD_FIRMWARE` is a STRING (transcribed
+  counter64), `OUTPUT_CARD_ROLE` an INTEGER (string), `OUTPUT_CARD_SERIAL` a
+  STRING (int), `OUTPUT_SLOT_STATUS` and `ETHERNET_PORT_STATUS` Counter64
+  (int), `RECEIVING_CARDS_ONLINE` INTEGER or STRING (counter64), and
+  `INPUT_SOURCE_TYPE` a string that the integer `SOURCE_TYPE` enum cannot map.
+  The input-card row matched. Whether the document or the transcription is at
+  fault is not established; `snmp.py` carries the per-OID provenance.
+- **Undocumented subtrees exist** (OBSERVED existence): `…10.1` (`"V1.0.0"`),
+  `…10.10.1.9`–`.11`, `…10.10.10.7`–`.12`, `…10.10.20.4.1.{1,3}`,
+  `…10.10.30.1`, `…10.10.30.4.1.{1,3,5}`, `…10.10.30.5.1.4.Y.{2,3.*}`,
+  `…10.10.50`, `.60`, `.70` and `…10.200.1`–`.6`. The only readings allowed:
+  `…10.10.30.4.1.5` = 72 = the total receiving-card count (REASONED, 3 x 24),
+  and `…10.10.30.1` = 1 possibly an output slot count, by symmetry with
+  `INPUT_SLOT_COUNT` (REASONED, not asserted). Everything else — including the
+  per-port table `…10.10.30.5.1.4.Y.{2,3.1,3.2,3.3}`, whose values are in the
+  fixture — has **no established meaning; do not assign one**.
+
+Switching SNMP on and off changed nothing else visible across the eight
+snapshot endpoints — **REASONED**, from diffs of snapshots that were not kept
+(they held show data) and that could not separate SNMP's effect from the
+`colorBeacon` PUTs made in the same window.
+
+**What crewbox's SNMP reader would make of this — REASONED from its code**
+(crewbox at `7c8cf6a`, `server/src/video/snmp.ts` and `ber.ts`; read, not run,
+and never against hardware). These are handoff items for crewbox's own agent,
+not changes made here:
+
+1. **It would show the main board as "3100°C" and grade the unit `warn`.**
+   `snmp.ts:372–375` takes `TEMPERATURE_POINT_VALUE` through `asNumber()`
+   unscaled; `gradeReading` (`shared/src/video.ts`) falls back to
+   `reading.temperature` when no cabinet carries one — always, on the SNMP
+   path — and 3100 ≥ `HOT_C` (60). The x100 scale behind this is itself
+   REASONED.
+2. **It would label the unit a backup.** `snmp.ts:343` sets
+   `isBackup = role === 1`; this unit read 1 while driving the wall alone.
+3. **Its identity round may fail outright — UNKNOWN whether it does.**
+   `OUTPUT_SLOT_STATUS` is in the identity GET (`snmp.ts:322`) and read
+   `0xFFFFFFFFFFFFFFFE`. A conformant BER encoding of that Counter64 needs nine
+   bytes (a leading `0x00`); `ber.ts`'s `decodeInteger` throws
+   `BerError('integer too wide')` above eight, and the socket handler drops a
+   `BerError` as "not ours" (`snmp.ts:253`). The request would then time out as
+   `identity: no answer`, `answered` 0, and the whole SNMP read would look
+   unanswered. If the firmware sends eight bytes it decodes as −2 and nothing
+   breaks (the field is unused). The encoding was not captured; if a capture
+   ever exists, a fixture should carry the raw BER bytes.
+4. **Per-card status asks OIDs this firmware did not serve in the walk.**
+   `snmp.ts:482` and `:493` build the documented `.Y.1.M` form — 24 OIDs per
+   populated port, in GETs of 16 + 8. What a GET of them returns was never
+   observed. If it looks like the `sysDescr` reply (`noSuchName`, varbinds
+   echoed as NULL), `session.get` ignores the error-status and each value
+   decodes as null, so all 72 cabinets would show `online: true` with no
+   temperature status. The per-port masks above are where this firmware keeps
+   the information.
+5. **The `ERROR:` port string is harmless there.** `asNumber()` makes it
+   `undefined`, `bounded()` makes that 0, and the port is skipped
+   (`snmp.ts:477–480`) — an empty port renders as empty, which is right.
+
 ### Over COEX HTTP GET
 
 Endpoint paths are **OFFICIAL** (manual and published clients). **Response field
@@ -493,10 +683,11 @@ and the earlier table (kept for the record in the git history) was wrong on
 every row that named a field. `coexsim.py` now emits these shapes by default.
 
 **Update, 2026-09-26 — a second COEX unit, an MX30 on firmware v1.5.1
-(operator-reported), read after a show.** Every "On an MX40 Pro" statement in
-the table below stands as observed on that unit. The MX30 gets its own table
-and its own section after the MX40 material, because it differs in ways a
-consumer has to handle — starting with how it says an endpoint is absent.
+(operator-reported during this pass; read over SNMP later that afternoon), read
+after a show.** Every "On an MX40 Pro" statement in the table below stands as
+observed on that unit. The MX30 gets its own table and its own section after
+the MX40 material, because it differs in ways a consumer has to handle —
+starting with how it says an endpoint is absent.
 
 | Endpoint | On an MX40 Pro | Confidence |
 |---|---|---|
@@ -630,10 +821,11 @@ the monitoring payload.
 ### The same surface on an MX30, firmware v1.5.1 — OBSERVED, 2026-09-26
 
 Scope for everything in this section: one MX30, firmware v1.5.1 as reported by
-the operator, read after a show between 14:44Z and 14:57Z with VMP attachment
-UNKNOWN, through the read-only client (two eight-endpoint snapshots seven
-minutes apart, ten further GETs, six `curl -i`) and a 300-tick poll. Nothing
-here generalises to other MX30s or other firmware until a second unit is read.
+the operator at the time (and read over SNMP as `V1.5.1` at 16:51Z, above),
+read after a show between 14:44Z and 14:57Z with VMP attachment UNKNOWN,
+through the read-only client (two eight-endpoint snapshots seven minutes apart,
+ten further GETs, six `curl -i`) and a 300-tick poll. Nothing here generalises
+to other MX30s or other firmware until a second unit is read.
 
 **Absent endpoints answer differently per firmware — the biggest correction.**
 On the MX40 Pro, an absent documented endpoint answered **HTTP 404** (`device`,
@@ -679,40 +871,41 @@ so at the time of the contact:
   against hardware.** Other endpoints still answer, so the processor is not
   counted missing (`answered` 6 on a topology poll, 3 on a status poll).
 
-**Identity: the name is a label, and the model is not readable.** On the MX30
-`monitor/info.name` is a single plain alphabetic word — no `MX`, `CX` or `KU`,
-no digits — identical in both snapshots and equal to no other string in the
-payload (not a screen, group or preset name). It is not reproduced here; it is
-the operator's. **The model cannot be read from `name` — OBSERVED on the MX30,
-whose name carried none; as a rule for the fleet, REASONED** — one unit shows
-`MX40 Pro_<digits>`, the other a plain word.
-That the word is an operator-set label is **REASONED**, not established: the
-API has an OFFICIAL `PUT /api/v1/device/hw/customname` setter, which makes a
-label possible, but nobody read the unit's settings and a firmware default word
-is not excluded; that the MX40 Pro's form was a factory default is likewise one
+**Identity over HTTP: the name is a label, and the model is not readable
+there.** On the MX30 `monitor/info.name` is a single plain alphabetic word — no
+`MX`, `CX` or `KU`, no digits — identical in both snapshots and equal to no
+other string in the payload (not a screen, group or preset name). It is not
+reproduced here; it is the operator's. **The model cannot be read from `name` —
+OBSERVED on the MX30, whose name carried none; as a rule for the fleet,
+REASONED** — one unit shows `MX40 Pro_<digits>`, the other a plain word. That
+the word is an operator-set label is **REASONED**, not established: the API has
+an OFFICIAL `PUT /api/v1/device/hw/customname` setter, which makes a label
+possible, but nobody read the unit's settings and a firmware default word is
+not excluded; that the MX40 Pro's form was a factory default is likewise one
 sample. **No field read over HTTP on either unit gives the controller model or
-firmware** (UNKNOWN over the API): a key search of every MX30 payload for
-model, firmware, version, serial, product, hardware, software or build finds
-version strings only on the receiving cards (`rvCardInfo.firmware`,
-`mcuFirmWare`, `ncpVersion`, `cabinetFileParam.version`), a
-`screens[0].inputPort.FirmwareVersion{}` whose every field is empty, and one
-model-like *number* — `modelId` 5138 (`0x1412`) on every
-`/api/v1/device/input` port entry, `screens[0].inputPort.ModelId` and
+firmware** (UNKNOWN over the API; over SNMP the MX30 gave both — `"MX30"`,
+`"V1.5.1"`, OBSERVED later the same afternoon, above): a key search of every
+MX30 payload for model, firmware, version, serial, product, hardware, software
+or build finds version strings only on the receiving cards
+(`rvCardInfo.firmware`, `mcuFirmWare`, `ncpVersion`,
+`cabinetFileParam.version`), a `screens[0].inputPort.FirmwareVersion{}` whose
+every field is empty, and one model-like *number* — `modelId` 5138 (`0x1412`)
+on every `/api/v1/device/input` port entry, `screens[0].inputPort.ModelId` and
 `canvases[0].outputCardModeId`. It appears in none of this repository's model
 tables, and **what it identifies — controller, input block, output card, mode —
 is UNKNOWN**; do not present it as the controller model. What *is* available to
 tell the units apart: the input complement (six sources — two 3G-SDI, one DP
 1.1, one HDMI 1.4, one HDMI 2.0, one internal generator) and the output
 enumeration (10 type-0 plus 2 type-1 outputs in `outputStatus[]`), both
-consistent with an MX30 (**REASONED**; the model name itself is
-operator-reported). One consequence for consumers of `survey --json`: at the
-time of the contact `survey`, `watch --once` and `identify` all reported this
-label as the `model`, because an unrecognised COEX name fell through to a
-profile whose name is the input string (OBSERVED, reproduced against a stub).
-Treat `model` from a COEX unit as unestablished until that fix is in the
-version you run.
+consistent with an MX30 (**REASONED**; the model name was operator-reported
+during this pass, then read over SNMP). One consequence for consumers of
+`survey --json`: at the time of the contact `survey`, `watch --once` and
+`identify` all reported this label as the `model`, because an unrecognised COEX
+name fell through to a profile whose name is the input string (OBSERVED,
+reproduced against a stub). Treat `model` from a COEX unit as unestablished
+until that fix is in the version you run.
 
-| Endpoint | On an MX30, v1.5.1 (operator-reported), 2026-09-26 | Confidence |
+| Endpoint | On an MX30, v1.5.1 (SNMP-confirmed later), 2026-09-26 | Confidence |
 |---|---|---|
 | `GET /api/v1/device` | **HTTP 200, empty body** — absent-or-empty, not 404 | OBSERVED (`curl -i`) |
 | `GET /api/v1/device/monitor/info` | Same skeleton as the MX40 Pro, with the differences tabled below: populated `cabinets[].cabinetID`, a nested `cabinets[].cabinet{}` in place of top-level readings, `rvCards[].phyTemperature` and `.signalInterruptCount`, `outputStatus[].type` and `.linkStatus`, `screenSourceStatus[].groupID` and `.linkStatus`, three fans, two controller ports, three new top-level keys. ≈ 97 KB compact for 72 cabinets | OBSERVED |
@@ -720,7 +913,7 @@ version you run.
 | `GET /api/v1/screen` | `screens[]` as on the MX40 Pro **plus** `canvases[]` with per-cabinet positions, `layersInWorkingMode[]` naming each layer's source, `canvasInWorkingMode[]`, `pageInfos[]`, an `inputPort{}` block with live signal detail; new keys `cryptoCabinetNum`, `monitorSlotId`. Byte-identical across the two snapshots | OBSERVED |
 | `GET /api/v1/device/input/sources` | six entries including an internal generator; 38 keys the MX40 fixture lacks (`defaultEDID{}`, `hdrList`, `gamut`, `dynamicRange`, `bitDepth`, `fiberPortLinkStatus`, `isSupport*`, `metaData{}`, `monitorSlotId`, …) | OBSERVED |
 | `GET /api/v1/preset` | same keys as the MX40 Pro; one screen, two presets, `state` false on both | OBSERVED |
-| `GET /api/v1/device/snmpstate` | `{"state": false}` — SNMP off on the second unit too | OBSERVED |
+| `GET /api/v1/device/snmpstate` | `{"state": false}` — SNMP off on the second unit too, as found. Later, with VMP closed, `PUT {"state": true}` turned it on and this GET read `{"state": true}`; `PUT {"value": true}` answered Success and changed nothing (see the SNMP recommendation) | OBSERVED |
 | `GET /api/v1/device/audio` | **present**: `{"enable": false, "source": 65535, "sourceName": ""}` (HTTP 404 on the MX40 Pro) | OBSERVED |
 | `GET /api/v1/device/screen/displaymode` | **HTTP 200, empty body** — absent-or-empty (HTTP 404 on the MX40 Pro) | OBSERVED (`curl -i`) |
 | `GET /api/v1/device/backup` | all four strings empty, as on the MX40 Pro | OBSERVED |
@@ -960,6 +1153,30 @@ position, so a 16-port processor is hundreds of frames.
 On COEX hardware, do not do this: the controller already reports the same
 hardware as cabinets over HTTP, with no session to take.
 
+**The register bus on the MX30 — tried once, VMP closed, 2026-09-26.** With the
+operator's go and VMP closed, not during a show:
+
+- **TCP 5200 refused the connection** (`ECONNREFUSED`) at 16:51:56Z, and once
+  more later in the session per the operator's log, of which no evidence file
+  was kept (OBSERVED). There was no packet capture, so an RST is not
+  established — on macOS an ICMP port-unreachable or a rejecting firewall
+  produces the same error. **No listener on 5200 at that moment is REASONED.**
+- **One read frame on UDP 5201 drew nothing in 3 s** (OBSERVED): 20 bytes,
+  address `0x00000000`, length 16 — byte for byte `protocol.read_request(0,
+  16)`. **Whether UDP 5201 listens is UNKNOWN**: silence cannot separate "not
+  listening" from "dropped" or "wrong frame", and an unconnected socket would
+  not have surfaced an ICMP rejection either.
+- Ports 15200 and 5203 were not tried.
+
+The Central Control Protocol document covers the MX30 over TCP 5200, UDP 5201
+and RS232 (OFFICIAL). **Whether Ethernet central control is a setting, off by
+default, or opened while VMP runs is UNKNOWN**, and this is not evidence that
+the register bus is closed on COEX hardware — not even on that unit, whose UDP
+port stayed unanswered rather than refused. Over Ethernet, only HTTP on 8001
+and SNMP (when switched on) were seen to answer (REASONED from what was tried).
+**None of this relaxes the rule above:** a different unit, firmware or VMP
+state may listen, and the rule is about what happens when one does.
+
 ### On non-COEX hardware (VX4S, NovaPro UHD Jr)
 
 **No session-free path exists.** There is no HTTP API and no SNMP; everything
@@ -1036,8 +1253,13 @@ shape: `snmpstate` `false` in both snapshots, two `snmpget` attempts answered
 were not recorded in the evidence, and an SNMPv1/v2c agent silently drops an
 unknown community, which also times out. So on the second unit "agent
 disabled" is **REASONED**, with `snmpstate` false as the consistent reading,
-rather than OBSERVED clean. The OID map has now met two COEX units and been
-exercised on neither.
+rather than OBSERVED clean. At that point the OID map had met two COEX units and
+been exercised on neither. The later session on the same MX30 settled the
+mechanism there: with `snmpstate` false a v2c `public` GET of `sysDescr` timed
+out (after each of two disables), and with it true the same GET answered at
+once (OBSERVED) — so on that unit `false` means no agent answering, not one
+refusing an unknown community (REASONED from those two states).
+The two earlier attempts stay REASONED, their parameters unrecorded.
 
 So `+0x19` is the **nominal** rate in centihertz and `+0x08` the **measured**
 frame period in microseconds — 20000 us is exactly 1/50 s, and only `+0x08`
@@ -1408,20 +1630,26 @@ own, so it is usable from a read-only consumer that polls by other means.
 | `rpProMI:` payload | **OBSERVED on one unit:** 8-byte ASCII tail, `App,0161`. It carries **no model ID and no device name** — the earlier "appears to carry model and name" guess was wrong as well as unevidenced. Identify over the register bus, not discovery |
 | Trusting a register read | **Four OBSERVED traps** (§5): unimplemented addresses echo the previous response instead of erroring; reads snap to field boundaries; a block must be read from its base in one request; and the receiving-card monitoring block is exactly 0x100 bytes, beyond which a read aliases into another block. Poison-test anything unverified, and never chunk a block read |
 | Polling 8001 with VMP attached | **One burst of eight GETs is OBSERVED safe mid-show** (0.1 s, no `Busying`, no effect on a live show) and **ten minutes at 1 Hz is OBSERVED clean on the controller side** (1,791 GETs after the show: 0 errors, 0 `Busying`, `monitor/info` p50 48 ms / p99 64 ms, no drift), **repeated for five minutes on an MX30** (900 GETs: 0 errors, 0 `Busying`, `monitor/info` p50 10.5 ms / p99 15.3 ms for 72 cabinets, no drift). Whether 1 Hz disturbs an operator mid-cue is still REASONED — VMP was not being driven, and its attachment after the show is UNKNOWN on both units. Use the read-only client, 10–30 s, back off on code 5 |
-| Monitoring over GET | **Rich over HTTP, field names now OBSERVED** (§4): per-card temperature, voltage, link state and error bits; main-board temperature and voltage; fan rpm; per-input signal via `sourceStatus`. On the MX30, `/api/v1/screen` adds cabinet positions (OBSERVED) and each layer's source (REASONED to be `groupId`, from one discriminating value; that it is the displayed input is REASONED too). SNMP was **off** on both COEX units seen. **Nothing** on VX4S / UHD Jr without a control session |
+| Monitoring over GET | **Rich over HTTP, field names now OBSERVED** (§4): per-card temperature, voltage, link state and error bits; main-board temperature and voltage; fan rpm; per-input signal via `sourceStatus`. On the MX30, `/api/v1/screen` adds cabinet positions (OBSERVED) and each layer's source (REASONED to be `groupId`, from one discriminating value; that it is the displayed input is REASONED too). SNMP was **off** on both COEX units as found; switched on once, on the MX30, it gave identity and per-port status (next row). **Nothing** on VX4S / UHD Jr without a control session |
+| SNMP, exercised once | **One MX30, V1.5.1, VMP closed, v2c `public`** (§4, OBSERVED): 170 values; model `"MX30"` and firmware `"V1.5.1"` — **the only surface seen that gives either**; 44 of 46 transcribed OIDs served. Handle before displaying: the **MIB-2 system group is absent** (`sysDescr` → `noSuchName`; probe with an enterprise OID); temperature, voltage and frame rates **x100** (REASONED); slot, Ethernet and receiving-card statuses are **64-bit bitmasks**, receiving-card status **one mask per port**, the documented per-card `.M` OIDs absent (bit readings REASONED); `"ERROR: ..."` **strings** where numbers belong, including `RECEIVING_CARDS_ONLINE` on empty ports; input types are strings with a trailing space; the internal source is missing; card names are empty strings; **`CONTROLLER_ROLE` 1 on a standalone unit — never show "backup" from it**. The walk, synthetic identifiers, is `tests/fixtures/mx30_snmp_walk.json` |
+| crewbox's SNMP reader | **REASONED from its code at `7c8cf6a`, never run against hardware — handoff items:** it would show **"3100°C"** and grade `warn` (no x100 scaling); label the unit a **backup** (`role === 1`); possibly lose the **whole identity round** if the firmware encodes the Counter64 `OUTPUT_SLOT_STATUS` in nine BER bytes (`integer too wide`, swallowed as "not ours") — the encoding is UNKNOWN; and ask per-card `.M` OIDs that were absent from the walk, which, if answered like `sysDescr`, show all 72 cabinets online with no status. The `ERROR:` port string is handled correctly |
+| Enabling SNMP | **A write, so never crewbox's.** `PUT /api/v1/device/snmpstate` takes **`{"state": true}`** (OBSERVED, twice each way, read back); **`{"value": true}` answers a Success envelope and changes nothing** (OBSERVED once) — so a Success on a PUT is not confirmation; read back (REASONED). `GET snmpstate` agreed with the agent in every observed check. Both COEX units were found with SNMP off, and the MX30 was left off |
 | Absent endpoints | **Differ per firmware.** MX40 Pro: HTTP 404 (OBSERVED). MX30 v1.5.1: **HTTP 200 with an empty body** — no `Content-Type`, no envelope, ~2 ms like everything else (OBSERVED). Test for the missing envelope; treat empty as absent, never as present-and-empty; never take 200 as "exists". Both readers this project knows of mishandled it at the time of contact (§4) |
-| Identity over HTTP | `monitor/info.name` is `MX40 Pro_<digits>` on one unit and a plain word on the other — **the model cannot be read from it** (OBSERVED on the MX30, whose name carried none); that the word is an operator label is REASONED. No model or firmware field exists on either unit (UNKNOWN over the API); a `modelId` 5138 is present but what it names is UNKNOWN. Tell units apart by input complement and output enumeration (REASONED) |
+| Identity over HTTP | `monitor/info.name` is `MX40 Pro_<digits>` on one unit and a plain word on the other — **the model cannot be read from it** (OBSERVED on the MX30, whose name carried none); that the word is an operator label is REASONED. No model or firmware field exists on either unit (UNKNOWN over the API); a `modelId` 5138 is present but what it names is UNKNOWN. Tell units apart by input complement and output enumeration (REASONED). **Over SNMP, when it is on, the MX30 gave both** (OBSERVED) |
 | Parsing both firmwares | Join on `rvCards[].cabinetID`; readings from `rvCards[]`; ignore `cabinets[]` top-level and nested `cabinet{}` readings (the nested voltage mirrors `rvCards[]` and double-counts); `signalInterruptCount` is a bare int; count fans, ports and outputs from their arrays; key connector type on `type`, never `id`; never trend by list index |
+| Register bus on COEX | **Never open it to a live COEX controller** — unchanged. On the MX30, with VMP closed, TCP 5200 refused a connect (OBSERVED once with evidence; a second refusal is in the operator's log only) and one read frame on UDP 5201 drew nothing in 3 s (UNKNOWN whether it listens). That is one unit at one moment, not evidence the bus is closed on COEX hardware |
 | Consuming it | `survey_network()` / `novasun survey --json`, `schema_version` 1. Leave `allow_register_bus` off |
 
 **Status of the first-day list.** Capturing an `rpProMI:` reply is **done** —
 see §2 — and so is the unicast question, which turned out to need a packet
 capture rather than a second host. Checking **whether SNMP is enabled** has now
-been done on two COEX units, and it was off on both (OBSERVED, 2026-09-11 and
-2026-09-26). If a unit is ever found with it on, most of the monitoring pane is
-available through an interface designed for exactly this; until then the HTTP
-GET path in §4 is the monitoring there is, and its two firmwares' differences
-are the thing to build for.
+been done on two COEX units, and it was off on both as found (OBSERVED,
+2026-09-11 and 2026-09-26). It was then switched on once, deliberately, on the
+MX30 with VMP closed, and the OID map was walked (§4): it gives identity HTTP
+cannot, and much of the pane, but only through the quirks listed there — and a
+read-only consumer still cannot turn it on. Where it is off, the HTTP GET path
+in §4 is the monitoring there is, and its two firmwares' differences are the
+thing to build for.
 
 Added to the list by §5: **do not build any register map from an unguarded
 sweep.** That applies to crewbox as much as to this repository.

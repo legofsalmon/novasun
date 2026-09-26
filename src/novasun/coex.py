@@ -8,7 +8,10 @@ register bus is the fallback for older processors.
 
 Endpoint paths follow NovaStar's *COEX Series Interface API* manual. Responses
 are ``{"code": 0, "data": ..., "message": "Success"}``; a non-zero ``code``
-raises :class:`CoexError`.
+raises :class:`CoexError`. A zero ``code`` on a PUT does not show that anything
+changed: on an MX30 a PUT whose body key the firmware ignored still answered
+Success (OBSERVED once, see :meth:`CoexClient.set_snmp`), so read a setting back
+after writing it.
 """
 
 from __future__ import annotations
@@ -86,6 +89,15 @@ class CoexClient:
         return self.request("GET", "/api/v1/device/monitor/info")
 
     # --- writes -------------------------------------------------------------
+    #
+    # Only two of these have met hardware: set_snmp and identify_controller, on
+    # one MX30 (firmware V1.5.1, 2026-09-26). set_snmp's {"value": ...} body
+    # turned out to be silently ignored there while the firmware answered
+    # Success. REASONED, untested: any other setter whose body follows the same
+    # {"value": ...} convention -- set_automatic_time, set_controller_name,
+    # set_system_time, set_timezone and the rest -- may be wrong the same way.
+    # None has been sent to a controller; read the setting back after any of
+    # them rather than trusting the envelope.
 
     def set_display_mode(self, mode: int) -> None:
         """0 normal, 1 blackout, 2 freeze."""
@@ -325,6 +337,19 @@ class CoexClient:
         self.request("PUT", "/api/v1/device/audio", body)
 
     def identify_controller(self, enabled: bool) -> None:
+        """Turn the controller's identification beacon on or off -- a write.
+
+        OBSERVED on one MX30 (firmware V1.5.1, 2026-09-26, VMP closed): both
+        ``{"value": true}`` and ``{"value": false}`` answered HTTP 200 with no
+        Content-Type, Content-Length 0 and no envelope -- the reply that firmware
+        gives GETs of absent endpoints. :meth:`request` turns that into ``{}``, so
+        this method returns without a word whatever happened. A PUT to a made-up
+        path was never tried, so the reply cannot tell whether the endpoint
+        exists; whether the beacon lit is UNKNOWN (nobody watched the chassis).
+        The ``{"value"}`` body is untested against alternatives -- the same
+        convention turned out to be ignored by ``snmpstate`` (see
+        :meth:`set_snmp`).
+        """
         self.request("PUT", "/api/v1/device/hw/colorBeacon", {"value": bool(enabled)})
 
     def backup_status(self) -> Any:
@@ -352,7 +377,26 @@ class CoexClient:
         return self.request("GET", "/api/v1/device/snmpstate")
 
     def set_snmp(self, enabled: bool) -> None:
-        self.request("PUT", "/api/v1/device/snmpstate", {"value": bool(enabled)})
+        """Turn the controller's SNMP agent on or off -- a write.
+
+        The body is ``{"state": bool}``, the key :meth:`snmp_state` returns.
+        OBSERVED on one MX30 (firmware V1.5.1, 2026-09-26, VMP closed):
+        ``{"state": true}`` and ``{"state": false}`` each flipped the state, twice
+        in each direction, and the GET read it back; ``{"value": true}`` -- what
+        this method sent until then -- answered HTTP 200 with a full Success
+        envelope (``{"code":0,"data":"","message":"Success"}``) and changed
+        nothing (OBSERVED once; ``{"value": false}`` was never sent). Because
+        :meth:`request` returns that envelope's data without raising, the old
+        body was a silent no-op that reported success. Where it came from is
+        unrecorded: it dates from commit 6c9cbd8, and whether the manual gives
+        ``"value"`` for this endpoint or the body followed the convention of
+        other setters is not established.
+
+        A Success envelope on a PUT is therefore not confirmation (REASONED from
+        this one endpoint). This method does not read back: call
+        :meth:`snmp_state` afterwards before relying on the change.
+        """
+        self.request("PUT", "/api/v1/device/snmpstate", {"state": bool(enabled)})
 
     def export_project(self) -> Any:
         return self.request("GET", "/api/v1/device/hw/deviceengineeringdocdata")

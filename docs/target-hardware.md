@@ -4,7 +4,7 @@ Ethernet control, three families, USB deferred to a later phase.
 
 | Target | Model ID | Family | Ports | Control path |
 |---|---|---|---|---|
-| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20, *unverified* (see [below](#inputs-and-outputs-per-model)) | HTTP JSON on 8001, register bus as fallback. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro; an MX30 also left eight probes unanswered, 2026-09-26) — must be given its address |
+| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20 per the table, *unverified*; **10 Ethernet on one MX30, OBSERVED** (see [below](#inputs-and-outputs-per-model)) | HTTP JSON on 8001, register bus as fallback — but **one MX30 refused TCP 5200**, VMP closed (OBSERVED once), and never open it on a live show. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro; an MX30 also left eight probes unanswered, 2026-09-26) — must be given its address |
 | **VX4S** (and VX4S-N) | `0x6107` / `0x612A` | Video processor | 4 | Register bus, TCP 5200 |
 | **NovaPro UHD Jr** | `0x6205` | Video processor | 16 | Register bus, TCP 5200 |
 
@@ -75,19 +75,26 @@ the profile rather than assumptions in the code.
 | **NovaPro UHD Jr** | DP 1.2, HDMI 2.0, DVI 1–4, 12G-SDI 1–2, OPT 1–2, DVI MOSAIC — *codes unknown* | 16 | 4x fibre, HDMI loop, 2x SDI loop |
 | **NovaPro HD** | SDI, DVI, HDMI, VGA, DP, CVBS — all switchable | 4 | — |
 | **MCTRL660 Pro** | SDI, HDMI, DVI — all switchable | 6 | — |
-| **MX40 Pro** and COEX | read from the controller at runtime | per `devices.COEX_MODELS` — *unverified*, see below | — |
+| **MX30** (one unit, V1.5.1) | HDMI 2.0, HDMI 1.4, DP 1.1, 3G-SDI x2, plus an internal source over HTTP — read from the controller at runtime | **10** — OBSERVED, see below | 2 of `outputStatus` type 1, REASONED to be OPT |
+| **MX40 Pro** and other COEX | read from the controller at runtime | per `devices.COEX_MODELS` — *unverified*, see below | — |
 
-**The COEX port counts in the device table are unverified.** `COEX_MODELS` in
-[`../src/novasun/devices.py`](../src/novasun/devices.py) gives the MX30 a
-`port_count` of 2 and the MX40 Pro 4, from product documentation, and no unit
-has confirmed either. The one MX30 read (2026-09-26) enumerated 33
-`outputStatus` entries in `monitor/info`: ten of `type` 0 with contiguous ids,
-twenty of type 5, two of type 1 and one of type 3 (OBSERVED). Read as ten RJ45
-ports and two OPT ports — REASONED from the MX30's connector complement; the
-type codes are undocumented and their meaning UNKNOWN — that is not 2. Cabinets
-hung on three of the type-0 outputs, 24 each. Take output counts from
-`outputStatus` at runtime rather than from the table. On the day, `survey`
-reported this unit as having 4 Ethernet ports: the number came from
+**The COEX port counts in the device table were taken from product
+documentation, and the MX30's is contradicted by the one unit read.**
+`COEX_MODELS` in [`../src/novasun/devices.py`](../src/novasun/devices.py) gave
+the MX30 a `port_count` of 2 and the MX40 Pro 4. The one MX30 read (2026-09-26)
+enumerated 33 `outputStatus` entries in `monitor/info`: ten of `type` 0 with
+contiguous ids, twenty of type 5, two of type 1 and one of type 3 (OBSERVED).
+Later the same day SNMP `ETHERNET_PORT_COUNT` read **10** on its output card
+(OBSERVED). Two independent reads agree: **the MX30 has ten Ethernet ports —
+OBSERVED on one unit, V1.5.1** — and the table now carries 10 for it with that
+provenance. That they are RJ45, and that the two type-1 outputs are the OPT
+ports, is REASONED from the MX30's connector complement; the `outputStatus`
+type codes are undocumented and their meaning UNKNOWN. Cabinets hung on three
+of the type-0 outputs, 24 each. The MX40 Pro's 4 is contradicted — its wall
+carried cabinets on 6 outputs — but its true count was not observed, so the
+table does not guess one; nor are the other COEX entries confirmed. Take output
+counts from `outputStatus` at runtime rather than from the table. On the day,
+`survey` reported this unit as having 4 Ethernet ports: the number came from
 `coex_profile_for()`'s fallback profile for an unrecognised name, not from
 anything read.
 
@@ -276,9 +283,15 @@ separately.
 ## What differs between the families
 
 **COEX (MX).** Cabinet topology, presets, layers and monitoring are documented
-HTTP calls operating on the controller's own model of the installation. Cabinets
-have IDs; you ask for the list and address them by ID. Nothing needs
-reverse-engineering, and the register bus is only for gaps.
+HTTP calls operating on the controller's own model of the installation.
+Cabinets have IDs; you ask for the list and address them by ID. Nothing needs
+reverse-engineering, and the register bus is only for gaps. Whether it is
+reachable over Ethernet at all is open: the one MX30 tried, with VMP closed,
+refused TCP 5200 and left a UDP 5201 read unanswered (OBSERVED once; whether
+that is a setting, a default, or VMP's absence is UNKNOWN, and it is no licence
+to open a session to a live COEX controller). The controller's model and
+firmware are not in any HTTP payload seen, but SNMP gives both when it is
+switched on (OBSERVED on that MX30).
 
 **VX4S and UHD Jr.** Register bus only. Brightness, blackout, freeze, test
 patterns and monitoring work identically to any other sending card — the same
@@ -331,8 +344,9 @@ unit then sustained ten minutes of read-only polling at 1 Hz after the show —
 [`read-only-monitoring.md`](read-only-monitoring.md) §3). Scope: one unit, one
 firmware.
 
-A second COEX unit — an **MX30**, firmware v1.5.1 by the operator's report —
-was read the same way on 2026-09-26 and spelled absence differently: **HTTP 200
+A second COEX unit — an **MX30**, firmware v1.5.1 by the operator's report,
+later read over SNMP as `V1.5.1` — was read the same way on 2026-09-26 and
+spelled absence differently: **HTTP 200
 with an empty body and no envelope**, for `/api/v1/device`, for `displaymode`
 and for three made-up paths alike (OBSERVED). So the undocumented-path question
 is answered for that firmware — no code 6 there either — and still open for the
