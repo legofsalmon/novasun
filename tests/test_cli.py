@@ -22,6 +22,7 @@ SUBCOMMANDS = [
     ["select-input"],
     ["outputs"],
     ["bringup"],
+    ["verify"],
     ["serve"],
     ["survey"],
     ["listen"],
