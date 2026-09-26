@@ -245,6 +245,23 @@ class TestCoexMonitor:
         assert "backup" not in snapshot.errors
         assert snapshot.model == "MX40 Pro"
 
+    def test_a_renamed_controller_polls_with_no_model(self, server) -> None:
+        """The MX30's monitor/info name was a plain word (OBSERVED 2026-09-26).
+
+        A synthetic label stands in for it. The name is kept, the model is not
+        invented from it, and the summary says so in its first line. Before
+        this the fallback profile echoed the label back and watch printed it
+        as the model.
+        """
+        server.state.custom_name = "Stage left"
+        host, port = server.address
+        with CoexMonitor(host, port, interval=0.0) as monitor:
+            snapshot = monitor.poll()
+        assert snapshot.model is None
+        assert snapshot.device_name == "Stage left"
+        assert snapshot.summary().splitlines()[0] == "unknown model  Stage left"
+        assert len(snapshot.cabinets) == 8  # the rest of the poll is unaffected
+
     def test_offline_cabinet_shows_up(self, server) -> None:
         server.state.cabinets[3]["online"] = False
         host, port = server.address
@@ -303,6 +320,14 @@ class TestRealShapes:
         assert snapshot.model == "MX40 Pro"
         assert snapshot.device_name == "MX40 Pro_000001"
         assert all(c.brightness == 0.8 for c in snapshot.cabinets)
+
+    def test_interpret_does_not_take_a_label_for_a_model(self) -> None:
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        renamed = {**MX40_LIKE_MONITOR_INFO, "name": "Stage left"}
+        snapshot = _interpret(MonitorSnapshot(timestamp=0.0, raw={"monitoring": renamed}))
+        assert snapshot.model is None
+        assert snapshot.device_name == "Stage left"
 
     def test_a_configured_cabinet_missing_from_monitoring_is_offline(self) -> None:
         from conftest import MX40_LIKE_CABINETS, MX40_LIKE_MONITOR_INFO

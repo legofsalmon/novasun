@@ -127,9 +127,14 @@ class Survey:
 
 def _profile_fields(survey: DeviceSurvey, profile: DeviceProfile) -> None:
     survey.family = profile.family.value
-    survey.model = profile.name if profile.is_known else survey.model
+    # A profile whose model was not recognised carries a placeholder name and
+    # an assumed port count. Neither is reported as if it had been read: a
+    # renamed MX30 once surveyed as model "<label>" with 4 Ethernet ports
+    # because the generic COEX profile echoed the label back (OBSERVED
+    # 2026-09-26). The reported name stays in ``survey.name``.
+    survey.model = profile.name if profile.model_known else survey.model
     survey.model_id = profile.model_id
-    survey.ethernet_ports = profile.port_count
+    survey.ethernet_ports = profile.port_count if profile.model_known else None
     survey.fibre_ports = profile.fibre_ports
     survey.inputs = [
         {

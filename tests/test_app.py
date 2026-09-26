@@ -11,7 +11,7 @@ import pytest
 
 from novasun.app.server import NovasunServer
 from novasun.app.state import DESTRUCTIVE, Application, Reachability
-from novasun.coexsim import SimulatedCoexController
+from novasun.coexsim import CoexState, SimulatedCoexController
 from novasun.registers import GLOBAL_BRIGHTNESS, KILL_MODE, SELF_TEST_MODE, brightness_byte
 from novasun.simulator import SimulatedController
 
@@ -87,6 +87,26 @@ class TestDeviceState:
         assert state.status["cabinets_total"] == 8
         # Test patterns are refused on COEX: the mode numbering is unknown.
         assert not state.capabilities["test_pattern"]
+
+    def test_a_renamed_coex_device_has_a_name_but_no_model(self, app) -> None:
+        # OBSERVED 2026-09-26: an MX30's monitor/info.name was a plain word an
+        # operator had set, carrying no model. The pane shows that word as the
+        # name and leaves the model unknown rather than echoing the label, and
+        # does not present the fallback profile's assumed port count as a fact.
+        server = SimulatedCoexController(SECOND_BIND, 0, CoexState(custom_name="Stage left"))
+        server.key_host = SECOND_KEY
+        server.serve_in_thread()
+        try:
+            state = add_coex_device(app, server).state
+        finally:
+            server.shutdown()
+            server.server_close()
+        assert state.reachability == Reachability.ONLINE.value
+        assert state.control_path == "http"
+        assert state.name == "Stage left"
+        assert state.model is None
+        assert state.ethernet_ports is None
+        assert state.status["cabinets_total"] == 8
 
     def test_unreachable_is_a_state_not_an_exception(self, app) -> None:
         device = app.add("127.0.0.1", control_port=closed_port(), http_port=closed_port())

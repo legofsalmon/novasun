@@ -4,7 +4,7 @@ Ethernet control, three families, USB deferred to a later phase.
 
 | Target | Model ID | Family | Ports | Control path |
 |---|---|---|---|---|
-| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20 | HTTP JSON on 8001, register bus as fallback. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro) — must be given its address |
+| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20, *unverified* (see [below](#inputs-and-outputs-per-model)) | HTTP JSON on 8001, register bus as fallback. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro; an MX30 also left eight probes unanswered, 2026-09-26) — must be given its address |
 | **VX4S** (and VX4S-N) | `0x6107` / `0x612A` | Video processor | 4 | Register bus, TCP 5200 |
 | **NovaPro UHD Jr** | `0x6205` | Video processor | 16 | Register bus, TCP 5200 |
 
@@ -75,7 +75,21 @@ the profile rather than assumptions in the code.
 | **NovaPro UHD Jr** | DP 1.2, HDMI 2.0, DVI 1–4, 12G-SDI 1–2, OPT 1–2, DVI MOSAIC — *codes unknown* | 16 | 4x fibre, HDMI loop, 2x SDI loop |
 | **NovaPro HD** | SDI, DVI, HDMI, VGA, DP, CVBS — all switchable | 4 | — |
 | **MCTRL660 Pro** | SDI, HDMI, DVI — all switchable | 6 | — |
-| **MX40 Pro** and COEX | read from the controller at runtime | 4 | — |
+| **MX40 Pro** and COEX | read from the controller at runtime | per `devices.COEX_MODELS` — *unverified*, see below | — |
+
+**The COEX port counts in the device table are unverified.** `COEX_MODELS` in
+[`../src/novasun/devices.py`](../src/novasun/devices.py) gives the MX30 a
+`port_count` of 2 and the MX40 Pro 4, from product documentation, and no unit
+has confirmed either. The one MX30 read (2026-09-26) enumerated 33
+`outputStatus` entries in `monitor/info`: ten of `type` 0 with contiguous ids,
+twenty of type 5, two of type 1 and one of type 3 (OBSERVED). Read as ten RJ45
+ports and two OPT ports — REASONED from the MX30's connector complement; the
+type codes are undocumented and their meaning UNKNOWN — that is not 2. Cabinets
+hung on three of the type-0 outputs, 24 each. Take output counts from
+`outputStatus` at runtime rather than from the table. On the day, `survey`
+reported this unit as having 4 Ethernet ports: the number came from
+`coex_profile_for()`'s fallback profile for an unrecognised name, not from
+anything read.
 
 Two consequences worth designing around.
 
@@ -129,7 +143,7 @@ First, two of them are not backed by storage at all:
 | NovaPro HD input select | `0x02200022` | **OBSERVED unimplemented** — 8/8 echoed |
 
 Classified with the poison-read discriminator in
-[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie),
+[`read-only-monitoring.md`](read-only-monitoring.md#5-four-register-bus-traps-that-make-reads-lie),
 which is required here: the whole `0x022000xx` space on this model echoes the
 previous response rather than erroring, so a naive read of either address
 returns a plausible-looking value. An earlier note in this file, written from
@@ -196,7 +210,7 @@ recorded, and the correction matters more than the original claim did.**
 Counting *distinct responses* rather than bytes requested tells a different
 story. Reading sequentially past a region's real extent does not fail — it
 returns the previous response (see
-[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie)).
+[`read-only-monitoring.md`](read-only-monitoring.md#5-four-register-bus-traps-that-make-reads-lie)).
 So a 64 KB sweep of a 1 KB region reads that 1 KB once and echoes it 63 times:
 
 | Sweep | Bytes requested | Distinct 1 KB responses | Distinct bytes |
@@ -311,11 +325,22 @@ Three documented endpoints — `/api/v1/device`, `/api/v1/device/audio` and
 `/api/v1/device/screen/displaymode` — answered a bare **HTTP 404** on that unit,
 not a `NotSupport` (code 6) envelope, and the
 simulator withholds them by default for the same reason. Whether an
-*undocumented* path draws code 6 is still **DERIVED** and unobserved. The same
+*undocumented* path draws code 6 on that firmware is still unobserved. The same
 unit then sustained ten minutes of read-only polling at 1 Hz after the show —
 1,791 GETs, no error, no `Busying`, no latency drift (see
 [`read-only-monitoring.md`](read-only-monitoring.md) §3). Scope: one unit, one
 firmware.
+
+A second COEX unit — an **MX30**, firmware v1.5.1 by the operator's report —
+was read the same way on 2026-09-26 and spelled absence differently: **HTTP 200
+with an empty body and no envelope**, for `/api/v1/device`, for `displaymode`
+and for three made-up paths alike (OBSERVED). So the undocumented-path question
+is answered for that firmware — no code 6 there either — and still open for the
+MX40 Pro's. `/api/v1/device/audio` did answer on the MX30. A consumer that
+treats a 200 as "exists" is wrong on the MX30; one that treats only a 404 as
+"absent" is wrong on it too. The shapes it returned, with synthetic values, are
+pinned in `tests/fixtures/mx30_like_api.json`; the simulator's default remains
+MX40-like. Scope, again: one unit, one firmware.
 
 ## Phasing
 

@@ -43,12 +43,14 @@ own stated checksums; both are source errors and are documented as such in
 
 ## Hardware
 
-Everything above is documentary. One physical source now exists:
+Everything above is documentary. Three units have now been seen — one on a
+bench, two on live-show networks:
 
 | Unit | Identified as | Available since |
 |---|---|---|
 | NovaPro UHD Jr | model ID `0x6205`, serial `16:04:11:00:c1:c9:2d:00`, discovery tail `App,0161` | 2026-08-26 |
-| MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **Three read-only bursts of eight HTTP GETs** (two mid-show, one five hours later), a few extra GETs, eight unanswered discovery probes and six unanswered SNMP GETs were sent to it, plus a ten-minute 1 Hz read-only poll after the show (1,791 GETs, three endpoints); nothing else. SNMP off; 288 cabinets on 6 outputs | 2026-09-11 |
+| MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **Three read-only bursts of eight HTTP GETs** (two mid-show, one five hours later), a few extra GETs, eight unanswered discovery probes and six unanswered SNMP GETs were sent to it, plus a ten-minute 1 Hz read-only poll after the show (1,791 GETs, three endpoints); nothing else. SNMP off; 288 cabinets on 6 outputs. **Firmware UNKNOWN** — never read, never recorded | 2026-09-11 |
+| MX30 (COEX) | identified by a MAC in the NovaStar OUI and by the operator, who also reports the **firmware as v1.5.1** — nothing read over HTTP carries the controller's model or firmware, so both are operator-reported, not OBSERVED. `monitor/info.name` is a plain word, not `MX30_<digits>` (that it is an operator-set label is REASONED). Read-only and unattended after a show, wall still lit, VMP attachment UNKNOWN: **two pings and about 950 HTTP GETs** (two eight-endpoint snapshots seven minutes apart, ten further GETs, six `curl -i`, a 300-tick 1 Hz poll of three endpoints = 900, and ~24 from `survey`/`watch`/`identify` whose outcomes were not kept), two unanswered SNMP GETs and eight unanswered discovery probes; nothing else — no TCP 5200, no PUT. SNMP off; 72 cabinets on 3 outputs | 2026-09-26 |
 
 Driving 30 receiving cards (model `0x4506`, firmware `4.3.0.0`) across output
 ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
@@ -59,7 +61,7 @@ What it settled: the model ID against the decompiled table, the shape of the
 presence test, the §3.1.1 monitoring decode, cabinet geometry, the per-connector
 signal record layout — and four undocumented firmware behaviours that make naive
 register reads return plausible wrong data, described in
-[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie).
+[`read-only-monitoring.md`](read-only-monitoring.md#5-four-register-bus-traps-that-make-reads-lie).
 
 What it did **not** settle, despite an earlier version of this note claiming
 otherwise: **which input register the UHD Jr implements**. All three documented
@@ -78,6 +80,33 @@ visible. A second burst 35 minutes later settled that `monitor/info` reorders
 its cabinets on every call, that runtimes are seconds at 60 s granularity, and
 what a quiet wall's readings do over half an hour (±1 °C, ±0.1 V). The SNMP OID map remains **unexercised** — it cannot be exercised
 read-only on a unit with SNMP disabled.
+
+The MX30 settled, read-only and unattended after a show (2026-09-26): that a
+second COEX firmware spells "absent" differently — **HTTP 200, empty body, no
+envelope**, for documented and made-up paths alike, where the MX40 Pro answered
+404 — so a status code alone proves nothing about an endpoint; that
+`monitor/info.name` can be an operator label, so **no model can be read from
+it** (OBSERVED on the MX30, whose name carried none); that `/api/v1/device/audio`,
+`/api/v1/screen/cabinet/count` and `/api/v1/device/input` answer on this
+firmware, and what they look like; that `hw/mode` reads 3 on a second model;
+that runtimes step in 60 s on a second unit; and that a 1 Hz poll of three
+endpoints at 72 cabinets costs nothing visible (900 requests, p50 10.5 ms, no
+drift, no error). Its SNMP was off too and it left eight discovery probes
+unanswered, so the OID map stays unexercised and discovery stays unanswered on
+every COEX unit met.
+
+What it cannot settle: **the controller's model or firmware over HTTP** — no
+field read carries either, and the one model-like number that recurs across
+payloads (`modelId`) identifies UNKNOWN what, so both facts rest on the
+operator; whether the five empty-200 endpoints are absent or present-but-empty;
+whether the name is operator-set (REASONED from the OFFICIAL `customname`
+setter, not read back); whether anything on that segment broadcasts, because
+the **packet-level positive control for the passive listener is still unrun**
+(tcpdump needs root on the observing host, which was also multi-homed); and
+whether VMP was attached during the session. The raw payloads carry show data —
+a chosen name, screen and preset names, UUIDs, cabinet ids — and are not
+retained in the repository; their structure, with synthetic values, is
+`tests/fixtures/mx30_like_api.json`.
 
 Register addresses still marked `derived` in
 [`../src/novasun/registers.py`](../src/novasun/registers.py) come from decompiled

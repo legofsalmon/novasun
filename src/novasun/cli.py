@@ -238,7 +238,7 @@ def cmd_simulate(args: argparse.Namespace) -> int:
         server = SimulatedCoexController(
             args.host,
             args.port if args.port is not None else 8001,
-            CoexState(model=model),
+            CoexState(model=model, custom_name=args.name),
         )
         host, port = server.address
         print(f"simulating {server.state.model} HTTP API on http://{host}:{port}")
@@ -523,6 +523,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--model",
         help="register bus: an alias or hex id (default vx4s); coex: a model name "
         "(default MX40 Pro)",
+    )
+    simulate.add_argument(
+        "--name",
+        help="coex: report this as monitor/info's name in place of the factory-style "
+        "'<model>_000001', as a controller an operator has renamed does",
     )
     simulate.add_argument("--cards-per-port", type=int, default=2)
     simulate.add_argument("--latency", type=float, default=0.0)

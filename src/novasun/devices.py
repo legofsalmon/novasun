@@ -41,6 +41,7 @@ was checksum-verified before being transcribed.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -160,6 +161,19 @@ class DeviceProfile:
     @property
     def is_known(self) -> bool:
         return self.family is not Family.UNKNOWN
+
+    @property
+    def model_known(self) -> bool:
+        """Whether ``name`` is a model, as opposed to a placeholder.
+
+        False for :func:`unknown_profile` and for :data:`GENERIC_COEX`. Both
+        are usable -- family, control path and a conservative port count --
+        but their ``name`` must not be reported as a model, and their port
+        count is an assumption rather than a reading.
+        """
+        return self.is_known and (
+            self.model_id is not None or self in COEX_MODELS.values()
+        )
 
     @property
     def input_select(self) -> bool:
@@ -404,6 +418,24 @@ COEX_MODELS: dict[str, DeviceProfile] = {
     }.items()
 }
 
+#: What :func:`coex_profile_for` returns when the reported name matches no
+#: model. Family and control path are certain -- only the HTTP API on 8001
+#: answers like this -- but ``name`` is a placeholder, not a model, and
+#: ``model_known`` is False. **The four ports are an assumption**, not a
+#: reading: MX40 Pro and CX40 Pro have four, MX30 and MX20 two, MX2000 Pro and
+#: MX6000 Pro twenty, and a controller whose operator has renamed it could be
+#: any of them. Consumers report the count as unknown rather than as four.
+GENERIC_COEX = DeviceProfile(
+    "COEX controller",
+    Family.COEX,
+    None,
+    port_count=4,
+    http_api=True,
+    presets=True,
+    display=DisplayControl(None, normal=0, blackout=1, freeze=2),
+    notes="model not recognised from the reported name; port count assumed",
+)
+
 PROVENANCE = {
     0x1107: "official (MCTRL 660 Pro protocol document) + decompiled NSCardType",
     0x6107: "model ID decompiled; inputs and display from the VX4S Command Protocol",
@@ -432,9 +464,15 @@ def profile_for(model_id: int) -> DeviceProfile:
 def coex_name_from_monitoring(client: "CoexClient") -> str | None:  # type: ignore[name-defined]
     """The controller's name as ``monitor/info`` reports it, or ``None``.
 
-    On an MX40 Pro whose firmware lacks ``/api/v1/device`` this is the only
-    identity the HTTP API offers: ``"MX40 Pro_002198"`` -- model, underscore,
-    digits -- which :func:`coex_profile_for` matches on the model prefix.
+    With ``/api/v1/device`` absent this is the only identity the HTTP API
+    offers, and it is a *name*, not a model. On the MX40 Pro read in 2026-09 it
+    was ``"MX40 Pro_<digits>"`` and happened to carry the model; on an MX30
+    (2026-09-26) the same field was a plain word with no model in it at all
+    (both OBSERVED, one unit each). The API documents a custom-name setter, so
+    the field is best read as an operator-settable label whose
+    ``"<model>_<digits>"`` form is a factory default (REASONED, not confirmed).
+    :func:`coex_profile_for` therefore takes a model from it only when a known
+    model name is actually in it.
     """
     from .coex import CoexError
 
@@ -448,21 +486,23 @@ def coex_name_from_monitoring(client: "CoexClient") -> str | None:  # type: igno
 
 
 def coex_profile_for(name: str | None) -> DeviceProfile:
-    """Match a name reported by the COEX HTTP API against the known models."""
+    """Match a name reported by the COEX HTTP API against the known models.
+
+    A model name is looked for *inside* the reported string, bounded by
+    non-alphanumerics: ``"MX40 Pro_002198"`` and ``"NovaStar KU20 Controller"``
+    resolve, and ``"MX2000 Pro"`` no longer falls to ``MX20`` on a prefix.
+    Anything else -- including a plain word an operator has set as the
+    controller's name -- returns :data:`GENERIC_COEX`, whose ``name`` is a
+    placeholder rather than the string passed in. A label is not evidence of a
+    model, and an earlier version that echoed it back as one reported a
+    renamed MX30 as model ``"<label>"`` (OBSERVED 2026-09-26).
+    """
     if name:
         lowered = name.strip().lower()
         for key, profile in COEX_MODELS.items():
-            if key in lowered or lowered in key:
+            if re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", lowered):
                 return profile
-    return DeviceProfile(
-        name or "COEX controller",
-        Family.COEX,
-        None,
-        port_count=4,
-        http_api=True,
-        presets=True,
-        display=DisplayControl(None, normal=0, blackout=1, freeze=2),
-    )
+    return GENERIC_COEX
 
 
 @dataclass
@@ -486,9 +526,11 @@ class Identification:
 
     def summary(self) -> str:
         profile = self.profile
+        # A placeholder name is not a model; the reported name has its own line.
+        model = profile.name if profile.model_known else "unknown"
         lines = [
             f"{self.host}",
-            f"  model        {profile.name}"
+            f"  model        {model}"
             + (f"  (0x{profile.model_id:04x})" if profile.model_id else ""),
             f"  family       {profile.family.value}",
             f"  control      {self.preferred_path}",
@@ -502,7 +544,7 @@ class Identification:
         if self.device_name:
             lines.append(f"  name         {self.device_name}")
 
-        outputs = [f"{profile.port_count}x Ethernet"]
+        outputs = [f"{profile.port_count}x Ethernet" + ("" if profile.model_known else " (assumed)")]
         outputs += [f"{o.count}x {o.label}" for o in profile.outputs]
         lines.append(f"  outputs      {', '.join(outputs)}")
 
@@ -546,8 +588,13 @@ def identify(
     Presence is established by ``/api/v1/device`` and, when that answers HTTP
     404, by ``/api/v1/screen``. A real MX40 Pro does exactly that: the
     documented device-info endpoint is absent from its firmware while the screen
-    endpoint is served. Its model name is then taken from ``monitor/info``,
-    whose ``name`` field reads ``"MX40 Pro_<digits>"`` on that unit.
+    endpoint is served. The name is then taken from ``monitor/info``, whose
+    ``name`` field read ``"MX40 Pro_<digits>"`` on that unit -- and a plain
+    word carrying no model at all on an MX30 (OBSERVED 2026-09-26). It is an
+    operator-settable label (REASONED: the API documents a custom-name setter),
+    so it is kept as ``device_name`` and yields a model only when a known model
+    name is in it; otherwise the profile is :data:`GENERIC_COEX` and the model
+    is reported as unknown.
 
     ``register_bus=False`` forbids the bus even when HTTP is down, for callers
     that must stay read-only.

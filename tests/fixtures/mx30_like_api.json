@@ -1,0 +1,1991 @@
+{
+ "/api/v1/device": {
+  "__empty_body__": true,
+  "__http_status__": 200
+ },
+ "/api/v1/device/audio": {
+  "enable": false,
+  "source": 65535,
+  "sourceName": ""
+ },
+ "/api/v1/device/backup": {
+  "backup": "",
+  "backupName": "",
+  "master": "",
+  "masterName": ""
+ },
+ "/api/v1/device/cabinet": [
+  {
+   "angle": 0,
+   "brightness": 0.5,
+   "bunchesIndex": 0,
+   "cabType": "",
+   "cabinetFileParam": {
+    "cabinetName": "",
+    "cardModel": "",
+    "issue": 0,
+    "manufactureName": "",
+    "status": "unknown",
+    "version": "0.0.0.0"
+   },
+   "canvasID": 2048,
+   "clientOrderNo": "",
+   "colorTemperature": 6500,
+   "customGamma": false,
+   "familyName": "",
+   "gain": {
+    "b": 43,
+    "g": 43,
+    "r": 43
+   },
+   "gamma": {
+    "b": 2.8,
+    "g": 2.8,
+    "r": 2.8
+   },
+   "id": 400000000000001,
+   "index": 0,
+   "indicatorLightState": true,
+   "manufacture": "",
+   "moduleCount": 4,
+   "moduleSize": {
+    "moduleCol": 255,
+    "moduleRow": 255,
+    "overwrite": false
+   },
+   "ncpFileName": "",
+   "ncpVersion": "0.0.0.0",
+   "outputCardID": 8,
+   "outputID": 2048,
+   "outputIndex": 0,
+   "pointSpacing": "0.000",
+   "power": 0,
+   "resolution": {
+    "height": 128,
+    "width": 128
+   },
+   "rvCardInfo": {
+    "chipEffectFlag": 0,
+    "decodeIc": "",
+    "driverChip": "",
+    "firmware": "4.6.6.68",
+    "firmwareRemark": "",
+    "grayScale": 14,
+    "maxGamma": 9856,
+    "mcuFirmWare": "4.6.6.68",
+    "mcuFirmWareRemark": "",
+    "moduleResolution": {
+     "height": 64,
+     "width": 64
+    },
+    "refreshRate": 3850,
+    "scanNumber": 16
+   },
+   "rvCardName": "A5sPlus",
+   "shortName": "",
+   "size": {
+    "height": 0,
+    "width": 0
+   },
+   "supportType": 0,
+   "voltage": 34,
+   "vsFreMax": 0,
+   "weight": 0
+  },
+  {
+   "angle": 0,
+   "brightness": 0.5,
+   "bunchesIndex": 0,
+   "cabType": "",
+   "cabinetFileParam": {
+    "cabinetName": "",
+    "cardModel": "",
+    "issue": 0,
+    "manufactureName": "",
+    "status": "unknown",
+    "version": "0.0.0.0"
+   },
+   "canvasID": 2048,
+   "clientOrderNo": "",
+   "colorTemperature": 6500,
+   "customGamma": false,
+   "familyName": "",
+   "gain": {
+    "b": 43,
+    "g": 43,
+    "r": 43
+   },
+   "gamma": {
+    "b": 2.8,
+    "g": 2.8,
+    "r": 2.8
+   },
+   "id": 400000000000002,
+   "index": 0,
+   "indicatorLightState": true,
+   "manufacture": "",
+   "moduleCount": 4,
+   "moduleSize": {
+    "moduleCol": 255,
+    "moduleRow": 255,
+    "overwrite": false
+   },
+   "ncpFileName": "",
+   "ncpVersion": "0.0.0.0",
+   "outputCardID": 8,
+   "outputID": 2050,
+   "outputIndex": 2,
+   "pointSpacing": "0.000",
+   "power": 0,
+   "resolution": {
+    "height": 128,
+    "width": 128
+   },
+   "rvCardInfo": {
+    "chipEffectFlag": 0,
+    "decodeIc": "",
+    "driverChip": "",
+    "firmware": "4.6.6.68",
+    "firmwareRemark": "",
+    "grayScale": 14,
+    "maxGamma": 9856,
+    "mcuFirmWare": "4.6.6.68",
+    "mcuFirmWareRemark": "",
+    "moduleResolution": {
+     "height": 64,
+     "width": 64
+    },
+    "refreshRate": 3850,
+    "scanNumber": 16
+   },
+   "rvCardName": "A5sPlus",
+   "shortName": "",
+   "size": {
+    "height": 0,
+    "width": 0
+   },
+   "supportType": 0,
+   "voltage": 57,
+   "vsFreMax": 0,
+   "weight": 0
+  },
+  {
+   "angle": 0,
+   "brightness": 0.5,
+   "bunchesIndex": 0,
+   "cabType": "",
+   "cabinetFileParam": {
+    "cabinetName": "",
+    "cardModel": "",
+    "issue": 0,
+    "manufactureName": "",
+    "status": "unknown",
+    "version": "0.0.0.0"
+   },
+   "canvasID": 2048,
+   "clientOrderNo": "",
+   "colorTemperature": 6500,
+   "customGamma": false,
+   "familyName": "",
+   "gain": {
+    "b": 43,
+    "g": 43,
+    "r": 43
+   },
+   "gamma": {
+    "b": 2.8,
+    "g": 2.8,
+    "r": 2.8
+   },
+   "id": 400000000000003,
+   "index": 0,
+   "indicatorLightState": true,
+   "manufacture": "",
+   "moduleCount": 4,
+   "moduleSize": {
+    "moduleCol": 255,
+    "moduleRow": 255,
+    "overwrite": false
+   },
+   "ncpFileName": "",
+   "ncpVersion": "0.0.0.0",
+   "outputCardID": 8,
+   "outputID": 2052,
+   "outputIndex": 4,
+   "pointSpacing": "0.000",
+   "power": 0,
+   "resolution": {
+    "height": 128,
+    "width": 128
+   },
+   "rvCardInfo": {
+    "chipEffectFlag": 0,
+    "decodeIc": "",
+    "driverChip": "",
+    "firmware": "4.6.6.68",
+    "firmwareRemark": "",
+    "grayScale": 14,
+    "maxGamma": 9856,
+    "mcuFirmWare": "4.6.6.68",
+    "mcuFirmWareRemark": "",
+    "moduleResolution": {
+     "height": 64,
+     "width": 64
+    },
+    "refreshRate": 3850,
+    "scanNumber": 16
+   },
+   "rvCardName": "A5sPlus",
+   "shortName": "",
+   "size": {
+    "height": 0,
+    "width": 0
+   },
+   "supportType": 0,
+   "voltage": 235,
+   "vsFreMax": 0,
+   "weight": 0
+  }
+ ],
+ "/api/v1/device/hw/mode": {
+  "mode": 3
+ },
+ "/api/v1/device/input": {
+  "inputPortConfig": [
+   {
+    "blackLevelInfo": {
+     "highLight": {
+      "b": 100,
+      "g": 100,
+      "r": 100,
+      "w": 100
+     },
+     "shadow": {
+      "b": 100,
+      "g": 100,
+      "r": 100,
+      "w": 100
+     }
+    },
+    "capacity": 0,
+    "colorGamut": 255,
+    "colorSpaceType": 255,
+    "cscParameter": {
+     "contrastValue": 100,
+     "hueValue": 0,
+     "portId": 255,
+     "saturationValue": 100
+    },
+    "dhcpConfig": {
+     "backupDHCPConfig": {
+      "dhcp": false,
+      "gateWay": "",
+      "localIp": "",
+      "netMask": ""
+     },
+     "masterDHCPConfig": {
+      "dhcp": false,
+      "gateWay": "",
+      "localIp": "",
+      "netMask": ""
+     }
+    },
+    "edidInfo": {
+     "isCustom": false,
+     "refreshRate": 50,
+     "resolution": {
+      "height": 1080,
+      "width": 1920
+     }
+    },
+    "fiberPortLinkStatus": null,
+    "hardwareID": "0 0 0001",
+    "hdrParameter": {
+     "overrideHdrType": 255,
+     "pqMaxCll": 1000,
+     "pqMaxCllChecked": false,
+     "pqMode": 0,
+     "realHdrType": 2
+    },
+    "isEdidSetting": false,
+    "isLimitToFull": false,
+    "logicId": 512,
+    "modelId": 5138,
+    "range": 255,
+    "sdpFileName": "",
+    "sdpSourceInfo": {
+     "colorGamut": 0,
+     "colorSpaceType": 0,
+     "hdrSdrInformation": 0,
+     "range": 0,
+     "scanMode": 0,
+     "sourceDepth": 0,
+     "sourceDetInColPixel": 0,
+     "sourceDetInRowPixel": 0,
+     "sourceFieldRate": 0
+    },
+    "videoStreamConfig": {
+     "backupVideoStreamConfig": {
+      "targetIp": "",
+      "targetPort": 0,
+      "videoStreamIp": ""
+     },
+     "masterVideoStreamConfig": {
+      "targetIp": "",
+      "targetPort": 0,
+      "videoStreamIp": ""
+     }
+    }
+   }
+  ],
+  "testPattern": {
+   "mode": 0,
+   "parameters": {
+    "blue": 0,
+    "gradientStretch": 1,
+    "gray": 1023,
+    "green": 0,
+    "gridWidth": 8,
+    "moveSpeed": 50,
+    "red": 4095,
+    "state": 0,
+    "x": 0,
+    "y": 0,
+    "z": 0
+   },
+   "txColorSpaceType": 0,
+   "txHDRType": 0
+  }
+ },
+ "/api/v1/device/input/sources": [
+  {
+   "actualRefreshRate": 60,
+   "actualResolution": {
+    "height": 1080,
+    "width": 1920
+   },
+   "bitDepth": 0,
+   "cardId": 0,
+   "colorSpace": "RGB 4:4:4",
+   "defaultEDID": {
+    "isCustom": false,
+    "refreshRate": 60,
+    "resolution": {
+     "height": 1080,
+     "width": 1920
+    }
+   },
+   "dynamicRange": "SDR",
+   "fiberPortLinkStatus": null,
+   "gamut": "",
+   "groupId": 57,
+   "hdrList": null,
+   "id": 3,
+   "inPhase": false,
+   "ip": "",
+   "isEdidCustom": false,
+   "isSupportCapacities": false,
+   "isSupportColorAdjust": true,
+   "isSupportEDID": false,
+   "isSupportHDR": false,
+   "isSupportHDRParams": true,
+   "isSupportIPAndPort": false,
+   "isSupportInputOverride": true,
+   "isSupportMetaData": false,
+   "isSupportPQMaxCllChecked": true,
+   "isSupportSPDIF": false,
+   "maxCapacity": 0,
+   "maxheight": 4096,
+   "maxwidth": 4096,
+   "metaData": {
+    "checksum": 0,
+    "infoFramLength": 0,
+    "infoFrameType": 0,
+    "infoFrameVersion": 0,
+    "maxContentLight": 0,
+    "maxFrameAvgLight": 0,
+    "maxLight": 0,
+    "maxMasterDisplayLight": 0,
+    "minMasterDisplayLight": 0,
+    "sourceTye": 0,
+    "whitePointX": 0,
+    "whitePointY": 0
+   },
+   "minCapacity": 0,
+   "minheight": 600,
+   "minwidth": 800,
+   "monitorSlotId": 0,
+   "name": "3G-SDI 1",
+   "order": 4,
+   "port": 0,
+   "range": 0,
+   "scanMode": 0,
+   "sourceChannel": 4,
+   "sourceStatus": 0,
+   "step": 4,
+   "stepHeight": 1,
+   "supportCapacities": null,
+   "supportColorSpace": [
+    0,
+    1,
+    2,
+    255
+   ],
+   "supportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|71.93|72.00|75.00|100.00|119.88|120.00|143.86|144.00|240.00",
+   "supportResolution": "1920*1080",
+   "type": 7,
+   "usable": true,
+   "yuv420StepHeight": 2,
+   "yuv420StepWidth": 8
+  },
+  {
+   "actualRefreshRate": 60,
+   "actualResolution": {
+    "height": 1080,
+    "width": 1920
+   },
+   "bitDepth": 0,
+   "cardId": 0,
+   "colorSpace": "RGB 4:4:4",
+   "defaultEDID": {
+    "isCustom": false,
+    "refreshRate": 60,
+    "resolution": {
+     "height": 1080,
+     "width": 1920
+    }
+   },
+   "dynamicRange": "SDR",
+   "fiberPortLinkStatus": null,
+   "gamut": "",
+   "groupId": 58,
+   "hdrList": null,
+   "id": 4,
+   "inPhase": false,
+   "ip": "",
+   "isEdidCustom": false,
+   "isSupportCapacities": false,
+   "isSupportColorAdjust": true,
+   "isSupportEDID": false,
+   "isSupportHDR": false,
+   "isSupportHDRParams": true,
+   "isSupportIPAndPort": false,
+   "isSupportInputOverride": true,
+   "isSupportMetaData": false,
+   "isSupportPQMaxCllChecked": true,
+   "isSupportSPDIF": false,
+   "maxCapacity": 0,
+   "maxheight": 4096,
+   "maxwidth": 4096,
+   "metaData": {
+    "checksum": 0,
+    "infoFramLength": 0,
+    "infoFrameType": 0,
+    "infoFrameVersion": 0,
+    "maxContentLight": 0,
+    "maxFrameAvgLight": 0,
+    "maxLight": 0,
+    "maxMasterDisplayLight": 0,
+    "minMasterDisplayLight": 0,
+    "sourceTye": 0,
+    "whitePointX": 0,
+    "whitePointY": 0
+   },
+   "minCapacity": 0,
+   "minheight": 600,
+   "minwidth": 800,
+   "monitorSlotId": 0,
+   "name": "3G-SDI 2",
+   "order": 5,
+   "port": 0,
+   "range": 0,
+   "scanMode": 0,
+   "sourceChannel": 5,
+   "sourceStatus": 0,
+   "step": 4,
+   "stepHeight": 1,
+   "supportCapacities": null,
+   "supportColorSpace": [
+    0,
+    1,
+    2,
+    255
+   ],
+   "supportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|71.93|72.00|75.00|100.00|119.88|120.00|143.86|144.00|240.00",
+   "supportResolution": "1920*1080",
+   "type": 7,
+   "usable": true,
+   "yuv420StepHeight": 2,
+   "yuv420StepWidth": 8
+  },
+  {
+   "actualRefreshRate": 60,
+   "actualResolution": {
+    "height": 1080,
+    "width": 3840
+   },
+   "bitDepth": 0,
+   "cardId": 0,
+   "colorSpace": "RGB 4:4:4",
+   "defaultEDID": {
+    "isCustom": false,
+    "refreshRate": 60,
+    "resolution": {
+     "height": 1080,
+     "width": 3840
+    }
+   },
+   "dynamicRange": "SDR",
+   "fiberPortLinkStatus": null,
+   "gamut": "",
+   "groupId": 32,
+   "hdrList": null,
+   "id": 256,
+   "inPhase": false,
+   "ip": "",
+   "isEdidCustom": false,
+   "isSupportCapacities": false,
+   "isSupportColorAdjust": true,
+   "isSupportEDID": true,
+   "isSupportHDR": false,
+   "isSupportHDRParams": true,
+   "isSupportIPAndPort": false,
+   "isSupportInputOverride": true,
+   "isSupportMetaData": false,
+   "isSupportPQMaxCllChecked": true,
+   "isSupportSPDIF": true,
+   "maxCapacity": 0,
+   "maxheight": 4095,
+   "maxwidth": 4092,
+   "metaData": {
+    "checksum": 0,
+    "infoFramLength": 0,
+    "infoFrameType": 0,
+    "infoFrameVersion": 0,
+    "maxContentLight": 0,
+    "maxFrameAvgLight": 0,
+    "maxLight": 0,
+    "maxMasterDisplayLight": 0,
+    "minMasterDisplayLight": 0,
+    "sourceTye": 0,
+    "whitePointX": 0,
+    "whitePointY": 0
+   },
+   "minCapacity": 0,
+   "minheight": 600,
+   "minwidth": 800,
+   "monitorSlotId": 0,
+   "name": "DP1.1",
+   "order": 3,
+   "port": 0,
+   "range": 0,
+   "scanMode": 0,
+   "sourceChannel": 1,
+   "sourceStatus": 0,
+   "step": 4,
+   "stepHeight": 1,
+   "supportCapacities": null,
+   "supportColorSpace": [
+    0,
+    1,
+    2,
+    255
+   ],
+   "supportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|72.00|75.00|85.00|100.00|119.88|120.00|143.86|144.00|240.00",
+   "supportResolution": "800*600|1024*768|1152*864|1280*720|1280*800|1280*960|1440*900|1600*900|1600*1200|1680*1050|1920*1080|1920*1200|2048*1080|2304*1152|2560*1080|2560*1400|2560*1600|3840*1080",
+   "type": 4,
+   "usable": true,
+   "yuv420StepHeight": 2,
+   "yuv420StepWidth": 8
+  },
+  {
+   "actualRefreshRate": 60,
+   "actualResolution": {
+    "height": 1080,
+    "width": 3840
+   },
+   "bitDepth": 0,
+   "cardId": 0,
+   "colorSpace": "RGB 4:4:4",
+   "defaultEDID": {
+    "isCustom": false,
+    "refreshRate": 60,
+    "resolution": {
+     "height": 1080,
+     "width": 3840
+    }
+   },
+   "dynamicRange": "SDR",
+   "fiberPortLinkStatus": null,
+   "gamut": "",
+   "groupId": 18,
+   "hdrList": [
+    255,
+    0,
+    1,
+    2
+   ],
+   "id": 768,
+   "inPhase": false,
+   "ip": "",
+   "isEdidCustom": false,
+   "isSupportCapacities": false,
+   "isSupportColorAdjust": true,
+   "isSupportEDID": true,
+   "isSupportHDR": false,
+   "isSupportHDRParams": true,
+   "isSupportIPAndPort": false,
+   "isSupportInputOverride": true,
+   "isSupportMetaData": false,
+   "isSupportPQMaxCllChecked": true,
+   "isSupportSPDIF": true,
+   "maxCapacity": 0,
+   "maxheight": 4095,
+   "maxwidth": 4092,
+   "metaData": {
+    "checksum": 0,
+    "infoFramLength": 0,
+    "infoFrameType": 0,
+    "infoFrameVersion": 0,
+    "maxContentLight": 0,
+    "maxFrameAvgLight": 0,
+    "maxLight": 0,
+    "maxMasterDisplayLight": 0,
+    "minMasterDisplayLight": 0,
+    "sourceTye": 0,
+    "whitePointX": 0,
+    "whitePointY": 0
+   },
+   "minCapacity": 0,
+   "minheight": 600,
+   "minwidth": 800,
+   "monitorSlotId": 0,
+   "name": "HDMI1.4 2",
+   "order": 2,
+   "port": 0,
+   "range": 0,
+   "scanMode": 0,
+   "sourceChannel": 3,
+   "sourceStatus": 0,
+   "step": 4,
+   "stepHeight": 1,
+   "supportCapacities": null,
+   "supportColorSpace": [
+    0,
+    1,
+    2,
+    255
+   ],
+   "supportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|72.00|75.00|85.00|100.00|119.88|120.00|143.86|144.00|240.00",
+   "supportResolution": "800*600|1024*768|1152*864|1280*720|1280*800|1280*960|1440*900|1600*900|1600*1200|1680*1050|1920*1080|1920*1200|2048*1080|2304*1152|2560*1080|2560*1400|2560*1600|3840*1080",
+   "type": 2,
+   "usable": true,
+   "yuv420StepHeight": 2,
+   "yuv420StepWidth": 8
+  },
+  {
+   "actualRefreshRate": 50,
+   "actualResolution": {
+    "height": 1080,
+    "width": 1920
+   },
+   "bitDepth": 1,
+   "cardId": 0,
+   "colorSpace": "YCbCr 4:4:4",
+   "defaultEDID": {
+    "isCustom": false,
+    "refreshRate": 60,
+    "resolution": {
+     "height": 2160,
+     "width": 3840
+    }
+   },
+   "dynamicRange": "SDR",
+   "fiberPortLinkStatus": null,
+   "gamut": "Rec.709",
+   "groupId": 25,
+   "hdrList": [
+    255,
+    0,
+    1,
+    2
+   ],
+   "id": 512,
+   "inPhase": false,
+   "ip": "",
+   "isEdidCustom": false,
+   "isSupportCapacities": false,
+   "isSupportColorAdjust": true,
+   "isSupportEDID": true,
+   "isSupportHDR": true,
+   "isSupportHDRParams": true,
+   "isSupportIPAndPort": false,
+   "isSupportInputOverride": true,
+   "isSupportMetaData": true,
+   "isSupportPQMaxCllChecked": true,
+   "isSupportSPDIF": true,
+   "maxCapacity": 0,
+   "maxheight": 4095,
+   "maxwidth": 4092,
+   "metaData": {
+    "checksum": 0,
+    "infoFramLength": 0,
+    "infoFrameType": 0,
+    "infoFrameVersion": 0,
+    "maxContentLight": 0,
+    "maxFrameAvgLight": 0,
+    "maxLight": 0,
+    "maxMasterDisplayLight": 0,
+    "minMasterDisplayLight": 0,
+    "sourceTye": 0,
+    "whitePointX": 0,
+    "whitePointY": 0
+   },
+   "minCapacity": 0,
+   "minheight": 600,
+   "minwidth": 800,
+   "monitorSlotId": 0,
+   "name": "HDMI2.0 1",
+   "order": 1,
+   "port": 0,
+   "range": 0,
+   "scanMode": 0,
+   "sourceChannel": 2,
+   "sourceStatus": 1,
+   "step": 4,
+   "stepHeight": 1,
+   "supportCapacities": null,
+   "supportColorSpace": [
+    0,
+    1,
+    2,
+    3,
+    255
+   ],
+   "supportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|72.00|75.00|85.00|100.00|119.88|120.00|143.86|144.00|240.00",
+   "supportResolution": "800*600|1024*768|1152*864|1280*720|1280*800|1280*960|1440*900|1600*900|1600*1200|1680*1050|1920*1080|1920*1200|2048*1080|2304*1152|2560*1080|2560*1400|2560*1600|3840*1080|3840*2160",
+   "type": 3,
+   "usable": true,
+   "yuv420StepHeight": 2,
+   "yuv420StepWidth": 8
+  },
+  {
+   "actualRefreshRate": 50,
+   "actualResolution": {
+    "height": 768,
+    "width": 1280
+   },
+   "bitDepth": 1,
+   "cardId": 101,
+   "colorSpace": "YCbCr 4:4:4",
+   "defaultEDID": {
+    "isCustom": false,
+    "refreshRate": 60,
+    "resolution": {
+     "height": 1080,
+     "width": 3840
+    }
+   },
+   "dynamicRange": "SDR",
+   "fiberPortLinkStatus": null,
+   "gamut": "DCI-P3(D65)",
+   "groupId": 224,
+   "hdrList": null,
+   "id": 25856,
+   "inPhase": false,
+   "ip": "",
+   "isEdidCustom": false,
+   "isSupportCapacities": false,
+   "isSupportColorAdjust": true,
+   "isSupportEDID": true,
+   "isSupportHDR": false,
+   "isSupportHDRParams": true,
+   "isSupportIPAndPort": false,
+   "isSupportInputOverride": true,
+   "isSupportMetaData": false,
+   "isSupportPQMaxCllChecked": true,
+   "isSupportSPDIF": false,
+   "maxCapacity": 0,
+   "maxheight": 8192,
+   "maxwidth": 8192,
+   "metaData": {
+    "checksum": 0,
+    "infoFramLength": 0,
+    "infoFrameType": 0,
+    "infoFrameVersion": 0,
+    "maxContentLight": 0,
+    "maxFrameAvgLight": 0,
+    "maxLight": 0,
+    "maxMasterDisplayLight": 0,
+    "minMasterDisplayLight": 0,
+    "sourceTye": 0,
+    "whitePointX": 0,
+    "whitePointY": 0
+   },
+   "minCapacity": 0,
+   "minheight": 600,
+   "minwidth": 800,
+   "monitorSlotId": 0,
+   "name": "internal-source",
+   "order": 0,
+   "port": 0,
+   "range": 1,
+   "scanMode": 0,
+   "sourceChannel": 6,
+   "sourceStatus": 1,
+   "step": 4,
+   "stepHeight": 1,
+   "supportCapacities": null,
+   "supportColorSpace": [
+    0
+   ],
+   "supportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|71.93|72.00|75.00|100.00|119.88|120.00|143.86|144.00|240.00",
+   "supportResolution": "800*600|1024*768|1152*864|1280*720|1280*800|1440*900|1600*900|1600*1200|1680*1050|1920*1080|1920*1200|2048*1080|2048*1152|2304*1024|2304*1152|2560*1080|2560*1440|2560*1600|2880*1800|3840*1080",
+   "type": 224,
+   "usable": true,
+   "yuv420StepHeight": 2,
+   "yuv420StepWidth": 8
+  }
+ ],
+ "/api/v1/device/monitor/info": {
+  "accessoryMonitorInfo": {
+   "multifunctionCardStatus": [],
+   "transmitterStatus": []
+  },
+  "backupStatus": {
+   "errCode": 108,
+   "maxNormalValue": 0,
+   "minNormalValue": 0,
+   "status": 0
+  },
+  "cabinets": [
+   {
+    "cabinet": {
+     "cabinetID": 0,
+     "humidity": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "power": null,
+     "smoke": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "temperature": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "voltage": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 4.3
+     }
+    },
+    "cabinetID": 400000000000001,
+    "canvasID": 2048,
+    "index": 0,
+    "outPutID": 2048,
+    "outputCardID": 8,
+    "rvCardID": 400000000000001,
+    "rvCards": [
+     {
+      "backupStatus": {
+       "mode": 0,
+       "status": 0
+      },
+      "cabinetID": 400000000000001,
+      "cabinetIndex": 0,
+      "errorBit": [
+       {
+        "status": 1,
+        "type": 0,
+        "value": 190
+       },
+       {
+        "status": 0,
+        "type": 1,
+        "value": 0
+       }
+      ],
+      "humidity": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 0
+      },
+      "moduleInfos": null,
+      "netPortIndex": 2048,
+      "nextCabinetLinkStatus": {
+       "linkStatus": true,
+       "status": 0
+      },
+      "phyTemperature": {
+       "phy1": {
+        "name": "",
+        "nameEn": "",
+        "status": 0,
+        "value": 0
+       },
+       "phy2": {
+        "name": "",
+        "nameEn": "",
+        "status": 0,
+        "value": 0
+       }
+      },
+      "runtime": 0,
+      "rvCardID": 400000000000001,
+      "signalInterruptCount": 0,
+      "temperature": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 41
+      },
+      "totalRuntime": 0,
+      "voltage": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 4.3
+      }
+     }
+    ]
+   },
+   {
+    "cabinet": {
+     "cabinetID": 0,
+     "humidity": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "power": null,
+     "smoke": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "temperature": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "voltage": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 4.2
+     }
+    },
+    "cabinetID": 400000000000002,
+    "canvasID": 2048,
+    "index": 0,
+    "outPutID": 2050,
+    "outputCardID": 8,
+    "rvCardID": 400000000000002,
+    "rvCards": [
+     {
+      "backupStatus": {
+       "mode": 0,
+       "status": 0
+      },
+      "cabinetID": 400000000000002,
+      "cabinetIndex": 0,
+      "errorBit": [
+       {
+        "status": 1,
+        "type": 0,
+        "value": 189
+       },
+       {
+        "status": 0,
+        "type": 1,
+        "value": 0
+       }
+      ],
+      "humidity": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 0
+      },
+      "moduleInfos": null,
+      "netPortIndex": 2050,
+      "nextCabinetLinkStatus": {
+       "linkStatus": true,
+       "status": 0
+      },
+      "phyTemperature": {
+       "phy1": {
+        "name": "",
+        "nameEn": "",
+        "status": 0,
+        "value": 0
+       },
+       "phy2": {
+        "name": "",
+        "nameEn": "",
+        "status": 0,
+        "value": 0
+       }
+      },
+      "runtime": 0,
+      "rvCardID": 400000000000002,
+      "signalInterruptCount": 0,
+      "temperature": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 43
+      },
+      "totalRuntime": 0,
+      "voltage": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 4.2
+      }
+     }
+    ]
+   },
+   {
+    "cabinet": {
+     "cabinetID": 0,
+     "humidity": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "power": null,
+     "smoke": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "temperature": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 0
+     },
+     "voltage": {
+      "name": "",
+      "nameEn": "",
+      "status": 0,
+      "value": 4.4
+     }
+    },
+    "cabinetID": 400000000000003,
+    "canvasID": 2048,
+    "index": 0,
+    "outPutID": 2052,
+    "outputCardID": 8,
+    "rvCardID": 400000000000003,
+    "rvCards": [
+     {
+      "backupStatus": {
+       "mode": 0,
+       "status": 0
+      },
+      "cabinetID": 400000000000003,
+      "cabinetIndex": 0,
+      "errorBit": [
+       {
+        "status": 1,
+        "type": 0,
+        "value": 187
+       },
+       {
+        "status": 0,
+        "type": 1,
+        "value": 0
+       }
+      ],
+      "humidity": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 0
+      },
+      "moduleInfos": null,
+      "netPortIndex": 2052,
+      "nextCabinetLinkStatus": {
+       "linkStatus": true,
+       "status": 0
+      },
+      "phyTemperature": {
+       "phy1": {
+        "name": "",
+        "nameEn": "",
+        "status": 0,
+        "value": 0
+       },
+       "phy2": {
+        "name": "",
+        "nameEn": "",
+        "status": 0,
+        "value": 0
+       }
+      },
+      "runtime": 0,
+      "rvCardID": 400000000000003,
+      "signalInterruptCount": 0,
+      "temperature": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 44
+      },
+      "totalRuntime": 0,
+      "voltage": {
+       "name": "",
+       "nameEn": "",
+       "status": 0,
+       "value": 4.4
+      }
+     }
+    ]
+   }
+  ],
+  "cardMonitorInfo": null,
+  "controllerPortMonitorInfos": [
+   {
+    "controllerPortID": 0,
+    "status": 0
+   },
+   {
+    "controllerPortID": 1,
+    "status": 2
+   }
+  ],
+  "fanInfos": [
+   {
+    "fanName": "Chassis Fan 1",
+    "fanNameEn": "Chassis Fan 1",
+    "fanShowType": 0,
+    "fanSpeed": 3776,
+    "fanType": 1,
+    "status": 0
+   },
+   {
+    "fanName": "FPGA Fan",
+    "fanNameEn": "FPGA Fan",
+    "fanShowType": 0,
+    "fanSpeed": 2783,
+    "fanType": 15,
+    "status": 0
+   },
+   {
+    "fanName": "Chassis Fan 2",
+    "fanNameEn": "Chassis Fan 2",
+    "fanShowType": 0,
+    "fanSpeed": 3756,
+    "fanType": 2,
+    "status": 0
+   }
+  ],
+  "imbLinkStatus": {
+   "linkStatus": false,
+   "status": 0
+  },
+  "inputFiberStatus": null,
+  "mainBoardTemperature": {
+   "name": "Main_board Temperature",
+   "nameEn": "Main_board Temperature",
+   "status": 0,
+   "value": 32
+  },
+  "mainBoardVoltage": {
+   "name": "Main_board Voltage",
+   "nameEn": "Main_board Voltage",
+   "status": 0,
+   "value": 11.56
+  },
+  "name": "Stage left",
+  "outputStatus": [
+   {
+    "linkStatus": true,
+    "outputCardID": 8,
+    "outputID": 2048,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": true,
+    "outputCardID": 8,
+    "outputID": 2049,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": true,
+    "outputCardID": 8,
+    "outputID": 2050,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": true,
+    "outputCardID": 8,
+    "outputID": 2051,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": true,
+    "outputCardID": 8,
+    "outputID": 2052,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2053,
+    "status": 2,
+    "type": 0
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2054,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2055,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2056,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2057,
+    "status": 0,
+    "type": 0
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2058,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2059,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2060,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2061,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2062,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2063,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2064,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2065,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2066,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2067,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2068,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2069,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2070,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2071,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2072,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2073,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2074,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2075,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2076,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2077,
+    "status": 0,
+    "type": 5
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2078,
+    "status": 0,
+    "type": 1
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 8,
+    "outputID": 2079,
+    "status": 0,
+    "type": 1
+   },
+   {
+    "linkStatus": false,
+    "outputCardID": 0,
+    "outputID": 0,
+    "status": 0,
+    "type": 3
+   }
+  ],
+  "powerMonitorInfos": [
+   {
+    "powerID": 0,
+    "status": 0
+   }
+  ],
+  "runtime": 21000,
+  "rvCardsRuntime": [
+   {
+    "cabinetID": 400000000000003,
+    "runtime": 31764480,
+    "rvCardID": 400000000000003,
+    "totalRuntime": 5940000
+   },
+   {
+    "cabinetID": 400000000000002,
+    "runtime": 31764480,
+    "rvCardID": 400000000000002,
+    "totalRuntime": 6072000
+   },
+   {
+    "cabinetID": 400000000000001,
+    "runtime": 31764480,
+    "rvCardID": 400000000000001,
+    "totalRuntime": 10170000
+   }
+  ],
+  "screenSourceStatus": [
+   {
+    "groupID": 25,
+    "inputCardID": 0,
+    "linkStatus": true,
+    "portID": 512,
+    "status": 0
+   },
+   {
+    "groupID": 57,
+    "inputCardID": 0,
+    "linkStatus": false,
+    "portID": 3,
+    "status": 0
+   },
+   {
+    "groupID": 58,
+    "inputCardID": 0,
+    "linkStatus": false,
+    "portID": 4,
+    "status": 0
+   },
+   {
+    "groupID": 32,
+    "inputCardID": 0,
+    "linkStatus": false,
+    "portID": 256,
+    "status": 0
+   },
+   {
+    "groupID": 18,
+    "inputCardID": 0,
+    "linkStatus": false,
+    "portID": 768,
+    "status": 0
+   },
+   {
+    "groupID": 224,
+    "inputCardID": 0,
+    "linkStatus": true,
+    "portID": 25856,
+    "status": 0
+   }
+  ],
+  "temperatureInfos": null,
+  "totalRuntime": 2052000,
+  "voltageInfos": null
+ },
+ "/api/v1/device/multifunc-card/detailinfo": [],
+ "/api/v1/device/screen/displaymode": {
+  "__empty_body__": true,
+  "__http_status__": 200
+ },
+ "/api/v1/device/snmpstate": {
+  "state": false
+ },
+ "/api/v1/novasun-probe-no-such-path": {
+  "__empty_body__": true,
+  "__http_status__": 200
+ },
+ "/api/v1/preset": {
+  "screenPresets": [
+   {
+    "presets": [
+     {
+      "effectSwitch": 0,
+      "name": "Preset A",
+      "outputData": false,
+      "presetUUID": "{00000000-0000-0000-0000-000000000003}",
+      "processingData": false,
+      "screenData": false,
+      "sequenceNumber": 1,
+      "sourceData": true,
+      "state": false
+     },
+     {
+      "effectSwitch": 0,
+      "name": "Preset B",
+      "outputData": false,
+      "presetUUID": "{00000000-0000-0000-0000-000000000004}",
+      "processingData": false,
+      "screenData": true,
+      "sequenceNumber": 2,
+      "sourceData": true,
+      "state": false
+     }
+    ],
+    "screenID": "{00000000-0000-0000-0000-000000000002}"
+   }
+  ]
+ },
+ "/api/v1/screen": {
+  "screenGroups": [
+   {
+    "isShow": false,
+    "name": "",
+    "ordinal": 1,
+    "screenGroupID": "{00000000-0000-0000-0000-000000000002}g"
+   }
+  ],
+  "screens": [
+   {
+    "canvases": [
+     {
+      "backupType": 0,
+      "cabinets": [
+       {
+        "angle": 0,
+        "cabinetID": 400000000000001,
+        "connectID": 0,
+        "lockStatus": false,
+        "outputID": 2048,
+        "pageID": 0,
+        "position": {
+         "x": 1408,
+         "y": 640
+        },
+        "size": {
+         "height": 128,
+         "width": 128
+        }
+       },
+       {
+        "angle": 0,
+        "cabinetID": 400000000000002,
+        "connectID": 0,
+        "lockStatus": false,
+        "outputID": 2050,
+        "pageID": 0,
+        "position": {
+         "x": 1408,
+         "y": 384
+        },
+        "size": {
+         "height": 128,
+         "width": 128
+        }
+       },
+       {
+        "angle": 0,
+        "cabinetID": 400000000000003,
+        "connectID": 0,
+        "lockStatus": false,
+        "outputID": 2052,
+        "pageID": 0,
+        "position": {
+         "x": 1408,
+         "y": 128
+        },
+        "size": {
+         "height": 128,
+         "width": 128
+        }
+       }
+      ],
+      "canvasID": 2048,
+      "canvasInWorkingMode": [
+       {
+        "isCustomSize": true,
+        "maxFrameRate": 480,
+        "size": {
+         "height": 624,
+         "width": 832
+        },
+        "workingMode": 0
+       },
+       {
+        "isCustomSize": true,
+        "maxFrameRate": 330.6,
+        "size": {
+         "height": 768,
+         "width": 1536
+        },
+        "workingMode": 1
+       }
+      ],
+      "canvasSerialNum": 0,
+      "frequencyPhaseStatus": 0,
+      "groups": null,
+      "inputID": 0,
+      "isCustomSize": true,
+      "lastSize": {
+       "height": 768,
+       "width": 1536
+      },
+      "layoutLines": null,
+      "maxFrameRate": 330.6,
+      "ordinal": 0,
+      "outputCardId": 8,
+      "outputCardModeId": 5138,
+      "position": {
+       "x": -158,
+       "y": -1072
+      },
+      "rectSize": {
+       "height": 768,
+       "width": 1536
+      },
+      "size": {
+       "height": 768,
+       "width": 1536
+      },
+      "sizeMode": 0,
+      "zorder": 0
+     }
+    ],
+    "createTime": "2025-01-01 00:00:00",
+    "cryptoCabinetNum": 0,
+    "inputPort": {
+     "CardId": 0,
+     "EnableFrameRateCorrection": false,
+     "FirmwareVersion": {
+      "FileNum": "",
+      "VersionName": "",
+      "VersionNumber": "",
+      "VersionRemark": ""
+     },
+     "GroupId": 25,
+     "HardwareID": "",
+     "HwCardId": 0,
+     "InputDetailInfo": {
+      "Capacities": "",
+      "DefaultFrameRate": 0,
+      "DefaultHeight": 2160,
+      "DefaultWidth": 3840,
+      "GroupId": 49,
+      "HDCPVersion": 4,
+      "HeightStepVal": 1,
+      "InputType": 3,
+      "InterfaceUseState": 0,
+      "InterlacedInputSupport": 0,
+      "IsSupportHDR": true,
+      "IsSupportHDROverwrite": true,
+      "IsSupportSPDIF": true,
+      "MCUDeviceIndex": 0,
+      "MCUInterface": 0,
+      "MaxBand": 600000000,
+      "MaxBandWidth": 6000,
+      "MaxCapacity": 0,
+      "MaxHeight": 4095,
+      "MaxSourceDepth": 10,
+      "MaxWidth": 4092,
+      "MinBand": 25000000,
+      "MinCapacity": 0,
+      "MinHeight": 600,
+      "MinWidth": 800,
+      "PortIndex": 0,
+      "SilkNumber": 1,
+      "SlotId": 2,
+      "SourceName": "HDMI2.0_1",
+      "SourceNumber": 2,
+      "SupportColorSpace": "0|1|2|3|255",
+      "SupportFrameRate": "23.98|24.00|25.00|29.97|30.00|47.95|48.00|50.00|59.94|60.00|72.00|75.00|85.00|100.00|119.88|120.00|143.86|144.00|240.00",
+      "SupportResolution": "800*600|1024*768|1152*864|1280*720|1280*800|1440*900|1600*900|1600*1200|1680*1050|1920*1080|1920*1200|2048*1080|2048*1152|2304*1024|2304*1152|2560*1080|2560*1440|2560*1600|2880*1800|3840*1080|3840*2160",
+      "Type": 1,
+      "WidthStepVal": 4,
+      "YcbcrSwapIn": 0
+     },
+     "InputSrcInfo": {
+      "ChannelId": 0,
+      "ColorGamut": 2,
+      "ColorSpaceType": 2,
+      "CurrentSourceDepth": 1,
+      "FiberNetConfig": {
+       "backupNetConfig": {
+        "dhcp": false,
+        "gateWay": "",
+        "localIp": "",
+        "netMask": "",
+        "targetIp": "",
+        "targetPort": 0,
+        "videoStreamIp": ""
+       },
+       "masterNetConfig": {
+        "dhcp": false,
+        "gateWay": "",
+        "localIp": "",
+        "netMask": "",
+        "targetIp": "",
+        "targetPort": 0,
+        "videoStreamIp": ""
+       }
+      },
+      "FiberPortLinkStatus": null,
+      "HDRSDRInformation": 0,
+      "HdcpState": 1,
+      "IP": "",
+      "InPhase": 0,
+      "InputID": 512,
+      "InputType": 3,
+      "InterfaceUseState": 0,
+      "InterlacedInputFlag": 0,
+      "IsSupportHDR": 1,
+      "OverWriteColorGamut": 2,
+      "Port": 0,
+      "Range": 0,
+      "SourceDetInColPixel": 1920,
+      "SourceDetInRowPixel": 1080,
+      "SourceFieldRate": 5000,
+      "SourceHBackPorch": 148,
+      "SourceHFrontPorch": 528,
+      "SourceHSyncPulse": 44,
+      "SourceHTotal": 2640,
+      "SourceStatus": 1,
+      "SourceVBackPorch": 36,
+      "SourceVFrontPorch": 4,
+      "SourceVSyncPulse": 5,
+      "SourceVTotal": 1125,
+      "VideoFormat": 0,
+      "XOffset": 0,
+      "YOffset": 0
+     },
+     "LogicId": 512,
+     "MaxCapacityLimit": 0,
+     "MetaData": {
+      "checksum": 0,
+      "infoFramLength": 0,
+      "infoFrameType": 0,
+      "infoFrameVersion": 0,
+      "maxContentLight": 0,
+      "maxFrameAvgLight": 0,
+      "maxLight": 0,
+      "maxMasterDisplayLight": 0,
+      "minMasterDisplayLight": 0,
+      "sourceTye": 0,
+      "whitePointX": 0,
+      "whitePointY": 0
+     },
+     "ModelId": 5138,
+     "MonitorSlotId": 0,
+     "Order": 0
+    },
+    "layersInWorkingMode": [
+     {
+      "layerLayoutMode": 1,
+      "layers": [
+       {
+        "border": {
+         "color": {
+          "b": 0,
+          "g": 0,
+          "r": 255
+         },
+         "enable": false,
+         "width": 0
+        },
+        "canvasId": 0,
+        "cut": {
+         "enable": false,
+         "rect": {
+          "height": 77,
+          "width": 64,
+          "x": 0,
+          "y": 0
+         }
+        },
+        "followState": false,
+        "gridId": 0,
+        "id": 1,
+        "layerInCanvasId": 2048,
+        "layerIndex": 1,
+        "layerSortId": 0,
+        "lock": false,
+        "position": {
+         "x": -158,
+         "y": -1072
+        },
+        "scaler": {
+         "height": 1080,
+         "width": 3840
+        },
+        "source": 224,
+        "sourceSize": {
+         "height": 768,
+         "width": 1280
+        },
+        "zOrder": 1
+       }
+      ],
+      "workingMode": 0
+     },
+     {
+      "layerLayoutMode": 0,
+      "layers": [
+       {
+        "border": {
+         "color": {
+          "b": 0,
+          "g": 0,
+          "r": 255
+         },
+         "enable": false,
+         "width": 0
+        },
+        "canvasId": 0,
+        "cut": {
+         "enable": false,
+         "rect": {
+          "height": 540,
+          "width": 1920,
+          "x": 0,
+          "y": 0
+         }
+        },
+        "followState": false,
+        "gridId": 10,
+        "id": 65537,
+        "layerInCanvasId": 0,
+        "layerIndex": 1,
+        "layerSortId": 0,
+        "lock": false,
+        "position": {
+         "x": -158,
+         "y": -1126
+        },
+        "scaler": {
+         "height": 864,
+         "width": 1537
+        },
+        "source": 25,
+        "sourceSize": {
+         "height": 1080,
+         "width": 1920
+        },
+        "zOrder": 2147483646
+       }
+      ],
+      "workingMode": 1
+     }
+    ],
+    "layoutMode": 0,
+    "lowLatency": false,
+    "masterFrameRate": 50,
+    "monitorSlotId": 0,
+    "ordinal": 0,
+    "outputMode": 0,
+    "pageInfos": [
+     {
+      "isShow": true,
+      "pageID": 0,
+      "pageName": "Fixture page 1"
+     },
+     {
+      "isShow": false,
+      "pageID": 1,
+      "pageName": "Fixture page 2"
+     },
+     {
+      "isShow": false,
+      "pageID": 2,
+      "pageName": "Fixture page 3"
+     },
+     {
+      "isShow": false,
+      "pageID": 3,
+      "pageName": "Fixture page 4"
+     },
+     {
+      "isShow": false,
+      "pageID": 4,
+      "pageName": "Fixture page 5"
+     },
+     {
+      "isShow": false,
+      "pageID": 5,
+      "pageName": "Fixture page 6"
+     },
+     {
+      "isShow": false,
+      "pageID": 6,
+      "pageName": "Fixture page 7"
+     },
+     {
+      "isShow": false,
+      "pageID": 7,
+      "pageName": "Fixture page 8"
+     }
+    ],
+    "position": {
+     "x": 0,
+     "y": 0
+    },
+    "screenGroupID": "{00000000-0000-0000-0000-000000000002}g",
+    "screenID": "{00000000-0000-0000-0000-000000000002}",
+    "screenIndex": 0,
+    "screenName": "Main",
+    "selectedPageID": 0,
+    "workingMode": 1
+   }
+  ]
+ },
+ "/api/v1/screen/cabinet/count": {
+  "list": [
+   {
+    "CabinetCount": 3,
+    "CabinetCountInBlackList": 0,
+    "ScreenID": "{00000000-0000-0000-0000-000000000002}"
+   }
+  ]
+ },
+ "/api/v1/screen/cabinets": {
+  "__empty_body__": true,
+  "__http_status__": 200
+ },
+ "/api/v1/screen/displayeffect": {
+  "__empty_body__": true,
+  "__http_status__": 200
+ },
+ "/api/v1/screen/properties": {
+  "__empty_body__": true,
+  "__http_status__": 200
+ },
+ "__about__": "The COEX HTTP API as OBSERVED on one NovaStar MX30 -- firmware v1.5.1 as reported by the operator, not read over the API -- on 2026-09-26, read once after a show through HTTP GETs only: real response structure and key spellings, synthetic values. The unit drove 72 cabinets on three of its ten type-0 outputs (REASONED: the RJ45 ports; output type codes are unconfirmed). Three cabinets stand in for 72 -- the chain-position-0 cabinet of each populated output (2048, 2050, 2052) -- so the per-output errorBit[0].value (190/189/187) and the odd /device/cabinet.voltage at chain position 0 (34/57/235; 5 elsewhere) are represented, both of UNKNOWN meaning; screen/cabinet/count says 3 to match. Every id, UUID, name and remark is synthetic; the controller name is a made-up label because the unit's was a plain word too, from which no model can be read. {\"__http_status__\": 200, \"__empty_body__\": true} marks a path that answered HTTP 200 with Content-Length: 0, no Content-Type and no {code, data, message} envelope, so a JSON parse of the body fails. OBSERVED with curl -i on /api/v1/device, /api/v1/device/screen/displaymode and the made-up /api/v1/novasun-probe-no-such-path: on this firmware an unknown path answers exactly like an absent one, where the MX40 Pro answered 404 for absent documented endpoints. /api/v1/screen/cabinets, /properties and /displayeffect carry the same marker but were seen only through a client that returns {} for an empty body and for {\"code\": 0, \"data\": {}} alike: absent-or-empty, UNKNOWN which. Every one of the six responses seen raw with curl -i, empty or not, carried Vary: Origin, Access-Control-Allow-Origin: * and Access-Control-Allow-Credentials: true. /api/v1/device/input is trimmed to one of its six inputPortConfig entries. Nothing here says what another MX30 or another firmware does. Generated from tests/conftest.py (MX30_LIKE_API); tests/test_fixtures.py asserts they agree."
+}

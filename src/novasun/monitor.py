@@ -322,9 +322,15 @@ def _interpret(snapshot: MonitorSnapshot) -> MonitorSnapshot:
         snapshot.device_name = device.get("name") or device.get("deviceName")
         snapshot.serial = device.get("sn") or device.get("serialNumber")
 
-    # OBSERVED on an MX40 Pro: /api/v1/device is absent (HTTP 404) and the only
-    # identity the API offers is monitor/info's name, "MX40 Pro_002198". The
-    # model is the recognised prefix; the whole string is the device name.
+    # With /api/v1/device absent (OBSERVED: MX40 Pro 2026-09-11, MX30
+    # 2026-09-26) the only identity the API offers is monitor/info's name. On
+    # the MX40 Pro it read "MX40 Pro_<digits>" and carried the model; on the
+    # MX30 it was a plain word carrying no model at all. The API documents a
+    # custom-name setter, so the field is an operator-settable label whose
+    # "<model>_<digits>" form is a factory default (REASONED). The whole string
+    # is the device name; a model is taken from it only when a known model name
+    # is actually in it. An earlier version accepted the fallback profile's
+    # name, which *was* the label, and reported the MX30's model as "<label>".
     info = snapshot.raw.get("monitoring")
     if isinstance(info, dict) and isinstance(info.get("name"), str) and info["name"]:
         from .devices import coex_profile_for  # cheap: devices imports nothing heavy
@@ -332,7 +338,7 @@ def _interpret(snapshot: MonitorSnapshot) -> MonitorSnapshot:
         snapshot.device_name = snapshot.device_name or info["name"]
         if snapshot.model is None:
             profile = coex_profile_for(info["name"])
-            snapshot.model = profile.name if profile.name.lower() in info["name"].lower() else None
+            snapshot.model = profile.name if profile.model_known else None
 
     display = snapshot.raw.get("display_mode")
     if isinstance(display, dict) and isinstance(display.get("value"), int):

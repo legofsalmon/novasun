@@ -205,10 +205,14 @@ class Device:
         state.last_error = None
         state.next_retry = None
         state.last_seen = time.time()
-        state.model = profile.name
+        # A profile whose model was not recognised carries a placeholder name
+        # and an assumed port count; neither is shown as if it had been read.
+        # A renamed MX30 (OBSERVED 2026-09-26) reported a plain word as its
+        # name, and an earlier version displayed that word as the model.
+        state.model = profile.name if profile.model_known else None
         state.family = profile.family.value
         state.control_path = "http" if processor.uses_http else "register-bus"
-        state.ethernet_ports = profile.port_count
+        state.ethernet_ports = profile.port_count if profile.model_known else None
         state.fibre_ports = profile.fibre_ports
         if processor.identification is not None:
             state.serial = processor.identification.serial or state.serial

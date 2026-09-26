@@ -101,16 +101,34 @@ are marked `OBSERVED` (see `registers.OBSERVED` and `registers.NOT_IMPLEMENTED`)
 `docs/sources.md` records what it can and cannot settle.
 
 An **MX40 Pro** on a live-show network was listened to passively and then read
-**once** — a single burst of eight HTTP GETs through the read-only client
-(2026-09-11). That is the whole of this project's contact with COEX hardware,
-and it changed a lot: every response shape the simulator had guessed was wrong,
-`/api/v1/device` is absent (HTTP 404) on that firmware, SNMP was off, and the
-application both crashed on the real monitoring payload and would have opened
-register-bus sessions to the controller. All four are fixed; the simulator now
-emits the observed shapes by default. VX4S is still document-and-simulator only.
+through the read-only client — first a single burst of eight HTTP GETs
+mid-show (2026-09-11), later two more bursts and a ten-minute 1 Hz poll; its
+firmware is UNKNOWN. Until the MX30 below, that was the whole of this project's
+contact with COEX hardware, and it changed a lot: every response shape the simulator had
+guessed was wrong, `/api/v1/device` is absent (HTTP 404) on that firmware, SNMP
+was off, and the application both crashed on the real monitoring payload and
+would have opened register-bus sessions to the controller. All four are fixed;
+the simulator now emits the observed shapes by default. VX4S is still
+document-and-simulator only.
 
-**An MX40 Pro does not answer `rqProMI:` discovery at all** (OBSERVED), so
-`novasun discover` cannot find COEX hardware; it has to be given the address.
+An **MX30** — firmware v1.5.1 by the operator's report; nothing read over HTTP
+gives model or firmware — was read the same way on 2026-09-26, unattended after
+a show with the wall still lit: two pings, about 950 GETs, two SNMP GETs, eight
+discovery probes, nothing else — no TCP 5200, no PUT. Two traps came out of it.
+**Absent paths answer HTTP 200 with an empty body and no envelope** —
+documented and made-up paths alike, in the same ~2 ms as a real endpoint —
+where the MX40 Pro answered 404; only the missing envelope tells them apart,
+and `CoexClient.request` turns that body into `{}`, so an empty 200 must never
+be read as "exists". And **`monitor/info.name` is a label, not a model**: a
+plain word on this unit, not `MX30_<digits>`, so no model can be read from it
+(OBSERVED on that unit; that the word is operator-set is REASONED) — `survey`,
+`watch` and `identify` all reported the word as the model that day. The
+observed shapes, with synthetic values, are `tests/fixtures/mx30_like_api.json`.
+Scope: one unit, one firmware.
+
+**Neither COEX unit answered `rqProMI:` discovery** (OBSERVED on the MX40 Pro;
+the MX30 left eight probes unanswered), so `novasun discover` cannot find COEX
+hardware; it has to be given the address.
 
 **On a live show, never open a register-bus session to a COEX controller.** The
 session is exclusive and displaces the VMP session running the show. `bringup`

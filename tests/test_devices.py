@@ -51,8 +51,35 @@ class TestProfiles:
     def test_coex_names_match_loosely(self) -> None:
         assert devices.coex_profile_for("mx40 pro").name == "MX40 Pro"
         assert devices.coex_profile_for("NovaStar KU20 Controller").name == "KU20"
+        assert devices.coex_profile_for("MX40 Pro_002198").name == "MX40 Pro"
         unknown = devices.coex_profile_for("MX99 Ultra")
         assert unknown.family is Family.COEX and unknown.http_api
+        assert unknown is devices.GENERIC_COEX and not unknown.model_known
+
+    def test_a_label_is_not_a_model(self) -> None:
+        """monitor/info's name is an operator-settable label, not a model.
+
+        On an MX30 (OBSERVED 2026-09-26) it was a plain word with no model in
+        it, and the fallback profile echoed that word back as the model. The
+        generic profile now keeps a placeholder name whatever it is given; a
+        short label cannot match a model by being a substring of one; and
+        "MX2000 Pro" no longer falls to MX20 on a prefix.
+        """
+        for label in ("Stage left", "Pro", "MX", "k"):
+            profile = devices.coex_profile_for(label)
+            assert profile is devices.GENERIC_COEX, label
+            assert not profile.model_known
+            assert label not in profile.name
+        assert devices.coex_profile_for("MX2000 Pro_000001").name == "MX2000 Pro"
+        assert devices.coex_profile_for("MX20_000001").name == "MX20"
+
+    def test_generic_coex_profile_is_an_assumption_not_a_reading(self) -> None:
+        generic = devices.GENERIC_COEX
+        assert generic.is_known and not generic.model_known
+        assert generic.port_count == 4  # assumed; consumers report None instead
+        assert "assumed" in generic.notes
+        assert not devices.unknown_profile(0xABCD).model_known
+        assert profile_for(0x6205).model_known
 
 
 @pytest.fixture()
@@ -208,6 +235,27 @@ class TestIdentify:
         assert identification.preferred_path == "http"
         assert identification.device_name == "MX40 Pro_000001"
         assert "MX40 Pro" in identification.summary()
+
+    def test_a_renamed_coex_controller_has_no_model(self, coex_server) -> None:
+        """A synthetic operator label stands in for the MX30's real one.
+
+        The label is reported as the name and as nothing else: no model, and
+        the generic profile's port count marked as the assumption it is.
+        """
+        coex_server.state.custom_name = "Stage left"
+        host, port = coex_server.address
+        identification = identify(host, timeout=2.0, http_port=port, register_bus=False)
+
+        assert identification.reachable_http
+        assert identification.profile is devices.GENERIC_COEX
+        assert not identification.profile.model_known
+        assert identification.profile.family is Family.COEX
+        assert identification.device_name == "Stage left"
+        summary = identification.summary()
+        assert "model        unknown" in summary
+        assert "name         Stage left" in summary
+        assert "model        Stage left" not in summary
+        assert "(assumed)" in summary
 
     def test_a_coex_controller_never_gets_a_register_bus_session(self, coex_server) -> None:
         """The register bus is exclusive; opening it displaces VMP mid-show.
