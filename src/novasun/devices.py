@@ -402,15 +402,25 @@ COEX_PORT_NOTES = {
     "MX40 Pro carried cabinets on 6 outputs (2026-09-11); true count not observed",
 }
 
-#: COEX controllers are identified by the HTTP API, not by model ID, and their
-#: inputs are read from ``/api/v1/device/input/sources`` at runtime -- which is
-#: why `inputs` is empty here. Display-mode values follow the HTTP API's own
-#: convention (1 blackout, 2 freeze), the opposite of the VX4S register.
+#: The COEX HTTP API's own ``modelID`` for a model, where hardware has shown
+#: it; see ``PROVENANCE["coex:MX30"]``. These are *not* register-bus model IDs
+#: and are kept out of :data:`MODELS`: that 5138 means anything on the
+#: register bus is UNKNOWN.
+COEX_MODEL_IDS: dict[str, int] = {
+    "MX30": 5138,  # OBSERVED 2026-09-26: /device/hw name "MX30", modelID 5138
+}
+
+#: COEX controllers are identified by the HTTP API -- by name, or by the
+#: ``modelID`` in ``/api/v1/device/hw`` where :data:`COEX_MODEL_IDS` knows it --
+#: and their inputs are read from ``/api/v1/device/input/sources`` at runtime,
+#: which is why `inputs` is empty here. Display-mode values follow the HTTP
+#: API's own convention (1 blackout, 2 freeze), the opposite of the VX4S
+#: register.
 COEX_MODELS: dict[str, DeviceProfile] = {
     name.lower(): DeviceProfile(
         name,
         Family.COEX,
-        None,
+        COEX_MODEL_IDS.get(name),
         ports,
         http_api=True,
         presets=True,
@@ -464,7 +474,13 @@ PROVENANCE = {
     "coex:MX30": "port_count 10: OBSERVED 2026-09-26 on one MX30, firmware "
     "V1.5.1 -- SNMP ETHERNET_PORT_COUNT = 10 on output card 1, and 10 type-0 "
     "entries in HTTP monitor/info outputStatus; that they are the RJ45 ports "
-    "is REASONED. Replaces the earlier 2, which no unit had confirmed",
+    "is REASONED. Replaces the earlier 2, which no unit had confirmed. "
+    "model_id 5138: OBSERVED 2026-09-26 on the same unit (hwVersion V1.5.1) -- "
+    "GET /api/v1/device/hw returned name \"MX30\" and modelID 5138 in one "
+    "object, and /device/firmware/list (deviceModelID) and /device/backcard/info "
+    "(modelId) repeated 5138. That the 5138 in device/input, inputPort.ModelId "
+    "and canvases[].outputCardModeId names the same thing is REASONED. It is "
+    "the HTTP API's model ID, not a register-bus one (UNKNOWN there)",
     "coex:MX40 Pro": "port_count 4 from product documentation, CONTRADICTED: "
     "the MX40 Pro read 2026-09-11 carried its cabinets on 6 outputs "
     "(OBSERVED). Its true port count was not observed, so the value is left "
@@ -510,6 +526,52 @@ def coex_name_from_monitoring(client: "CoexClient") -> str | None:  # type: igno
     return None
 
 
+def coex_profile_for_model_id(model_id: int | None) -> DeviceProfile:
+    """The COEX profile whose HTTP-API ``modelID`` is ``model_id``.
+
+    Only IDs hardware has shown are known (:data:`COEX_MODEL_IDS`); any other
+    value, ``None`` and a bool return :data:`GENERIC_COEX`.
+    """
+    if isinstance(model_id, int) and not isinstance(model_id, bool):
+        for profile in COEX_MODELS.values():
+            if profile.model_id == model_id:
+                return profile
+    return GENERIC_COEX
+
+
+def coex_profile_from_hardware(name: str | None, model_id: int | None) -> DeviceProfile:
+    """The model ``/api/v1/device/hw`` names: by ``name``, then by ``modelID``.
+
+    On one MX30 (OBSERVED 2026-09-26) that endpoint's ``name`` read "MX30" and
+    ``modelID`` 5138, while ``customName`` held the controller's name; that
+    ``name`` is always the model is REASONED from that one read. A name the
+    table does not know falls through to the model ID, then to
+    :data:`GENERIC_COEX`.
+    """
+    profile = coex_profile_for(name) if isinstance(name, str) else GENERIC_COEX
+    return profile if profile.model_known else coex_profile_for_model_id(model_id)
+
+
+def coex_hardware_identity(client: "CoexClient") -> dict:  # type: ignore[name-defined]
+    """Identity fields from one ``GET /api/v1/device/hw``, or ``{}``.
+
+    A read. Any failure -- HTTP 404, ``NotSupport``, a timeout -- and the
+    MX30's empty 200 for an absent path all come back empty, so a caller
+    behaves exactly as it did before this endpoint was known. Only named
+    fields are returned (:func:`novasun.monitor.interpret_hardware_info`);
+    ``randomPassword`` is never among them.
+    """
+    from .coex import CoexError
+    from .monitor import interpret_hardware_info
+
+    try:
+        payload = client.hardware_info()
+    except (CoexError, OSError, ValueError):
+        return {}
+    fields = interpret_hardware_info(payload)
+    return fields if any(value is not None for value in fields.values()) else {}
+
+
 def coex_profile_for(name: str | None) -> DeviceProfile:
     """Match a name reported by the COEX HTTP API against the known models.
 
@@ -553,10 +615,17 @@ class Identification:
         profile = self.profile
         # A placeholder name is not a model; the reported name has its own line.
         model = profile.name if profile.model_known else "unknown"
+        if not profile.model_id:
+            model_id = ""
+        elif profile.http_api:
+            # The COEX HTTP API's modelID is a decimal number in its payloads,
+            # and not a register-bus ID; hex would invite the confusion.
+            model_id = f"  (modelID {profile.model_id})"
+        else:
+            model_id = f"  (0x{profile.model_id:04x})"
         lines = [
             f"{self.host}",
-            f"  model        {model}"
-            + (f"  (0x{profile.model_id:04x})" if profile.model_id else ""),
+            f"  model        {model}{model_id}",
             f"  family       {profile.family.value}",
             f"  control      {self.preferred_path}",
         ]
@@ -618,8 +687,16 @@ def identify(
     word carrying no model at all on an MX30 (OBSERVED 2026-09-26). It is an
     operator-settable label (REASONED: the API documents a custom-name setter),
     so it is kept as ``device_name`` and yields a model only when a known model
-    name is in it; otherwise the profile is :data:`GENERIC_COEX` and the model
-    is reported as unknown.
+    name is in it.
+
+    When it does not, one more GET is made: ``/api/v1/device/hw``, which on
+    the MX30 carried ``name`` "MX30" and ``modelID`` 5138 (OBSERVED, one read;
+    see :func:`coex_profile_from_hardware`). Its serial fills ``serial``, and
+    its ``customName`` the device name if nothing else gave one. If that
+    endpoint is absent or names no model the table knows, the result is
+    exactly what it was without it: :data:`GENERIC_COEX`, model unknown.
+    ``randomPassword``, served by the same endpoint, is never read into the
+    result.
 
     ``register_bus=False`` forbids the bus even when HTTP is down, for callers
     that must stay read-only.
@@ -663,6 +740,15 @@ def identify(
             name = coex_name_from_monitoring(client)
         identification.profile = coex_profile_for(name)
         identification.device_name = name
+        if not identification.profile.model_known:
+            hardware = coex_hardware_identity(client)
+            from_hardware = coex_profile_from_hardware(
+                hardware.get("model"), hardware.get("model_id")
+            )
+            if from_hardware.model_known:
+                identification.profile = from_hardware
+            identification.serial = identification.serial or hardware.get("serial") or ""
+            identification.device_name = identification.device_name or hardware.get("custom_name")
         return identification  # never open a control session to a COEX box here
 
     if not register_bus:

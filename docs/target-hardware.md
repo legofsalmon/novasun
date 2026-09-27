@@ -4,7 +4,7 @@ Ethernet control, three families, USB deferred to a later phase.
 
 | Target | Model ID | Family | Ports | Control path |
 |---|---|---|---|---|
-| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | n/a | COEX | 2–20 per the table, *unverified*; **10 Ethernet on one MX30, OBSERVED** (see [below](#inputs-and-outputs-per-model)) | HTTP JSON on 8001, register bus as fallback — but **one MX30 refused TCP 5200**, VMP closed (OBSERVED once), and never open it on a live show. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro; an MX30 also left eight probes unanswered, 2026-09-26) — must be given its address |
+| **MX series** (MX40 Pro, MX30, MX20, MX2000/6000 Pro) | not in NovaLCT's table; **MX30 reports `modelID` 5138 over HTTP** (OBSERVED, one unit) | COEX | 2–20 per the table, *unverified*; **10 Ethernet on one MX30, OBSERVED** (see [below](#inputs-and-outputs-per-model)) | HTTP JSON on 8001, register bus as fallback — but **one MX30 refused TCP 5200**, VMP closed (OBSERVED once), and never open it on a live show. **Does not answer `rqProMI:` discovery** (OBSERVED, MX40 Pro; an MX30 also left eight probes unanswered, 2026-09-26). **The MX30 announces itself** every 3 s on UDP 54622/54623/54624/54700 (OBSERVED), so a receive-only listener finds it; otherwise give it its address |
 | **VX4S** (and VX4S-N) | `0x6107` / `0x612A` | Video processor | 4 | Register bus, TCP 5200 |
 | **NovaPro UHD Jr** | `0x6205` | Video processor | 16 | Register bus, TCP 5200 |
 
@@ -33,6 +33,15 @@ $ novasun identify 192.168.1.40
 
 `novasun models` lists the whole table.
 
+On COEX hardware the identity endpoint is **`GET /api/v1/device/hw`** —
+`name` "MX30", `modelID` 5138, `hwVersion` "V1.5.1", `sn` and `mac` on the one
+MX30 read (OBSERVED, 2026-09-26). `/api/v1/device`, the path the manual names,
+returned nothing on either COEX unit read (HTTP 404 on one, an empty 200 on the
+other). `/device/hw` also returns a
+`randomPassword` field to any unauthenticated GET, purpose UNKNOWN: whatever
+reads it must drop that field before logging, storing or displaying the
+reply. Whether `identify` reads `/device/hw` depends on the version you run.
+
 ## Where the model IDs come from
 
 Model ID is a two-byte read of register `0x00000002`. The values and port counts
@@ -51,6 +60,12 @@ reproduced across a power cycle. The same read also returned a serial
 protocol word of `02 05`, and the low block at `0x00000000` is internally
 consistent with the register map: the `0xA8` marker sits at `+6` and the u16 max
 packet size at `+7`, exactly where `registers.py` says they are.
+
+**MX30 = 5138 (`0x1412`) is OBSERVED over HTTP**, a different route: COEX
+models are not in the decompiled `NSCardType` table at all, and the value comes
+from `GET /api/v1/device/hw`, which gave `name` "MX30" and `modelID` 5138 in
+one object on the one unit read (2026-09-26). `firmware/list` and
+`backcard/info` repeat it, and 5138 recurs on that unit's input ports.
 
 So the decompiled table now agrees with reality on both entries where an
 independent check exists — one vendor document, one bench. That is a materially
@@ -90,7 +105,11 @@ OBSERVED on one unit, V1.5.1** — and the table now carries 10 for it with that
 provenance. That they are RJ45, and that the two type-1 outputs are the OPT
 ports, is REASONED from the MX30's connector complement; the `outputStatus`
 type codes are undocumented and their meaning UNKNOWN. Cabinets hung on three
-of the type-0 outputs, 24 each. The MX40 Pro's 4 is contradicted — its wall
+of the type-0 outputs, 24 each, and two more type-0 outputs, 2049 and 2051,
+are **backup ports** — OBSERVED from the unit's own `outputPortLinkChange`
+event, which flagged `backupState: true` on 2051 as 2049 went down when the
+output lines were unplugged (2026-09-26); earlier recorded as loop or backup
+returns (REASONED). The MX40 Pro's 4 is contradicted — its wall
 carried cabinets on 6 outputs — but its true count was not observed, so the
 table does not guess one; nor are the other COEX entries confirmed. Take output
 counts from `outputStatus` at runtime rather than from the table. On the day,
@@ -107,7 +126,11 @@ different registers. See
 
 **Blackout and freeze are swapped between the VX4S and COEX.** `1` means freeze
 on a VX4S and blackout over HTTP. An application that hard-codes either will
-eventually black out a screen it meant to freeze.
+eventually black out a screen it meant to freeze. The COEX read-back,
+`displayState[].displayMode` at `GET /api/v1/screen/output/display/state`,
+uses the COEX numbering: it read **2 through a front-panel freeze** and **1
+through a front-panel blackout** on an MX30 (OBSERVED, 2026-09-26; the blackout
+once).
 
 `Processor` resolves all of this from the profile, so application code stays in
 the user's terms:
@@ -289,9 +312,30 @@ reverse-engineering, and the register bus is only for gaps. Whether it is
 reachable over Ethernet at all is open: the one MX30 tried, with VMP closed,
 refused TCP 5200 and left a UDP 5201 read unanswered (OBSERVED once; whether
 that is a setting, a default, or VMP's absence is UNKNOWN, and it is no licence
-to open a session to a live COEX controller). The controller's model and
-firmware are not in any HTTP payload seen, but SNMP gives both when it is
-switched on (OBSERVED on that MX30).
+to open a session to a live COEX controller; a later capture saw UDP 5201
+answer a read with ICMP port-unreachable, VMP not yet connected). The
+controller's model and firmware are at `GET /api/v1/device/hw`, and SNMP gives
+both too when it is switched on (both OBSERVED on that MX30). The nearest
+thing to a control session is an HTTP lock, `/api/v1/device/hw/lock`, which
+VMP takes when it opens and a GET can read (OBSERVED); what it excludes is
+UNKNOWN, and a read-only consumer never PUTs it. See
+[`read-only-monitoring.md`](read-only-monitoring.md) §3.
+
+Three more things the same MX30 settled (OBSERVED, attended, 2026-09-26;
+detail in [`coex-http-api.md`](coex-http-api.md)):
+
+- **Brightness is a 0–1 fraction, set per cabinet.**
+  `PUT /api/v1/device/cabinet/brightness` works and reads back;
+  `PUT /api/v1/screen/brightness` with `coex.py`'s body answers Success and
+  does nothing.
+- **Cabinet presence is not in `monitor/info`**, which kept every cabinet
+  listed and linked with the output lines unplugged. The connected count is
+  `/api/v1/screen/cabinet/count` or the `/api/v1/device/cabinet` entry count.
+- **The front-panel power button is a standby** (REASONED from what was
+  OBSERVED): HTTP and the announcements stop within a second, but
+  connections to its address are refused, not left unanswered, for at least
+  7.5 minutes (operator-reported that the button, not the mains, was used).
+  Refused is not "unplugged".
 
 **VX4S and UHD Jr.** Register bus only. Brightness, blackout, freeze, test
 patterns and monitoring work identically to any other sending card — the same

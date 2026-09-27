@@ -27,6 +27,11 @@ note said there was "probably model and name information in there worth parsing
 properly"; that guess was unevidenced and turned out to be wrong. Replies are
 **unicast** to the requester, so a passive listener never sees them.
 
+`discover` finds register-bus hardware only. No COEX unit seen has answered
+it; the one MX30 read announces itself instead, every 3 s on UDP 54622, 54623,
+54624 and 54700, which a receive-only listener hears without sending anything
+(see [`read-only-monitoring.md`](read-only-monitoring.md) §1).
+
 
 ## Counting a sweep honestly
 
@@ -95,6 +100,35 @@ sudo tcpdump -i any -w before.pcap 'tcp port 5200 or tcp port 15200 or udp port 
 
 # Windows, from the Wireshark install directory
 dumpcap -i 1 -w before.pcapng -f "tcp port 5200 or udp port 3800"
+```
+
+#### Filter on the controller, never on your own host
+
+A capture filtered on the capturing machine's own address — `host <this
+machine> or broadcast or multicast` — records everything that machine does,
+not only what it says to the controller. On 2026-09-26 one such capture, taken
+to watch VMP, also recorded an unrelated plaintext web session between the
+capturing machine and another device on the network, credentials included.
+The capture and every cache derived from it had to be deleted; what was
+learned survives only as masked notes. The rule:
+
+- **Filter on the controller's address**, plus broadcast and multicast when
+  the question involves discovery or announcements, plus only the ports the
+  question needs. Never filter on your own host's address.
+- **Keep high-rate streams out of the control file.** A COEX unit's 8082
+  preview runs at about 51 Mbit/s; capture it separately if at all.
+- **Treat every capture as a secret until it has been reviewed.** Never commit
+  one, never share one unreviewed, and build fixtures only from masked,
+  synthetic-valued extracts — never directly from the raw file.
+- **Record the filter, the interface and the routing table** with the session
+  notes, and make sure the filter admits IPv6 if a negative is going to be
+  claimed: `host` with an IPv4 address matches IPv4 only, and a "nothing was
+  sent" drawn from an IPv4-only file covers IPv4 only.
+
+```bash
+# the controller, broadcast and multicast; the preview stream excluded
+sudo tcpdump -i en0 -w coex.pcap \
+  '(host 192.0.2.10 and not tcp port 8082) or broadcast or multicast'
 ```
 
 Then:
@@ -185,6 +219,34 @@ python -m novasun coex diff before.json after.json
 
 Expect noise from monitoring fields that drift on their own — temperatures,
 uptimes. Read the diff for what changed structurally.
+
+**Watching VMP itself.** The COEX API is plain HTTP on 8001, so a packet
+capture on VMP's host — filtered as above — shows exactly what VMP reads and
+writes. That is how the display-state endpoint, the identity endpoint, the
+HTTP lock and the websocket push channel were found on 2026-09-26 (see
+[`coex-http-api.md`](coex-http-api.md)). Opening VMP writes to the controller —
+it writes the clock and takes the lock — so capturing VMP's open is a session
+with writes in it, and needs the operator's go like any other.
+
+**Attended tests at the wall.** The front-panel tests that settled the MX30's
+display, cabinet and power behaviour (2026-09-26) needed no writes at all: the
+operator acted at the panel or the cables, and the watchers only listened —
+GETs (`display/state` at 1 Hz, `monitor/info` every 2 s), a websocket sending
+only the upgrade and pongs, and a receive-only socket on UDP 54622. Prefer
+that shape: the operator changes the wall, the tooling observes. Two lessons
+from the same evening:
+
+- **Watch more than one signal.** `monitor/info` alone would have reported
+  the unplugged wall as healthy; `screen/cabinet/count`, `/device/cabinet`,
+  `outputStatus[].linkStatus` and the websocket all showed the change
+  (OBSERVED; see [`read-only-monitoring.md`](read-only-monitoring.md) §4).
+  Keep a watcher running through power-off too — that is how standby's
+  refusals, rather than timeouts, were seen.
+- **When a test must write, step relative to a fresh read and say which way
+  it will go.** The one brightness test that wrote set an absolute 0.45 on a
+  wall at 0.2, taking it from 20 % to 45 % — brighter — when dimming had been
+  announced. Read the value first, move it by a small relative step, tell the
+  operator the direction, and put it back.
 
 ## The serial gap
 

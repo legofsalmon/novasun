@@ -111,8 +111,8 @@ would have opened register-bus sessions to the controller. All four are fixed;
 the simulator now emits the observed shapes by default. VX4S is still
 document-and-simulator only.
 
-An **MX30** — firmware v1.5.1, operator-reported at first and later read over
-SNMP; nothing read over HTTP gives model or firmware — was read the same way on
+An **MX30** — firmware v1.5.1, operator-reported at first, later read over
+SNMP and over HTTP (`/api/v1/device/hw`) — was read the same way on
 2026-09-26, unattended after a show with the wall still lit: two pings, about
 950 GETs, two SNMP GETs, eight discovery probes; in that read-only pass nothing
 else — no TCP 5200, no PUT. Two traps came out of it.
@@ -132,21 +132,72 @@ same MX30 took this project's first COEX writes — 2 `colorBeacon` PUTs and 5
 `snmpstate` PUTs, SNMP left off — its first SNMP walk, and a register-bus
 probe. With the operator then watching the chassis, nine more `colorBeacon`
 PUTs across three request bodies changed nothing visible: treat that endpoint
-as absent on this firmware (REASONED). A 30-second front-panel freeze, watched
-the same way, moved nothing on HTTP or SNMP: **display state is not observable**
-on this unit, so show it as unknown, never as normal.
+as absent on this firmware (REASONED). A front-panel freeze, watched the same
+way, moved nothing on the endpoints that sweep polled; it was written up as
+"display state is not observable" — **withdrawn**, see below.
 **SNMP turns on with `{"state": true}`; `{"value": true}` answers Success and
 does nothing**, which is what `set_snmp` sent at the time, so read back after
-any PUT. SNMP gave model `MX30` and firmware `V1.5.1`, which HTTP
-does not; its quirks (no MIB-2 system group, x100 values (REASONED), bitmask
-statuses, `ERROR:` strings, role 1 on a standalone unit) are in
+any PUT. SNMP gave model `MX30` and firmware `V1.5.1`; its quirks (no MIB-2
+system group, x100 values (REASONED), bitmask statuses, `ERROR:` strings, role 1 on a standalone unit) are in
 `docs/read-only-monitoring.md`, the walk in
 `tests/fixtures/mx30_snmp_walk.json`. TCP 5200 refused and UDP 5201 stayed
-silent — one unit, one moment, VMP closed. That changes nothing below.
+silent (a later frame drew ICMP port-unreachable) — one unit, VMP closed or not
+yet connected. That changes nothing below.
+
+That evening a packet capture on the VMP host, with VMP opened by the operator
+(this project sent one UDP 5201 frame, nothing else), and attended tests with
+VMP closed — read-only watchers, apart from three brightness PUTs — settled
+more. OBSERVED on that unit unless labelled; detail in
+`docs/read-only-monitoring.md`:
+
+- **Display state is observable.** `GET /api/v1/screen/output/display/state`
+  reads `displayState[].displayMode` per `canvasID`: 0 live, 2 through a
+  front-panel freeze, **1 through a front-panel blackout — all three
+  OBSERVED** (1 once, 2 twice). That is the COEX numbering (see "Blackout and
+  freeze are swapped"). The first freeze sweep missed this endpoint. An empty
+  or unmapped reading is unknown, never normal.
+- **`monitor/info` gives a false all-clear** on an unplugged wall — the COEX
+  trap below, next to the register-bus ones.
+- **`set_screen_brightness`'s body is a silent no-op**: `PUT
+  /api/v1/screen/brightness {"idList", "ratio"}` answered Success and changed
+  nothing, like `set_snmp`'s old body. `PUT /api/v1/device/cabinet/brightness`
+  worked and read back. Brightness is a 0–1 fraction. Brightness tests step
+  relative to a fresh read: an absolute target once took a wall from 20 % to
+  45 % when it had been announced as being dimmed.
+- **At a front-panel power-off** the announcements stopped, the websocket
+  ended and HTTP answered connection refused, all within about a second — and
+  HTTP went on refusing, never timing out, for the 7.5 minutes it was watched.
+  The front-panel button is a **standby** with the network stack still up
+  (REASONED), so a refusal does not mean the unit is gone: announcements
+  absent plus HTTP refused = standby; HTTP timing out with no ARP reply =
+  unpowered or disconnected (REASONED, never observed). The announcements kept
+  coming with every output unplugged: they show the controller, not the wall.
+- **The MX30 announces itself** every 3.0 s on UDP 54622, 54623, 54624 and
+  54700 from 54650 — JSON with its MAC, API and HTTPS ports, no model or name.
+  A receive-only listener there is passive discovery (`novasun listen`, UDP
+  54622 by default); the "no announcement" results were for UDP 3800 only.
+  VMP sent no probe.
+- **Identity is `GET /api/v1/device/hw`**: `name`, `modelID` 5138, `hwVersion`,
+  `sn`, `mac`. It also serves **`randomPassword`** to any GET, purpose
+  UNKNOWN: novasun code never logs, stores, displays or serialises it.
+- **The COEX session mechanism is an HTTP lock, not a connection** (REASONED;
+  what it excludes is UNKNOWN). Opening VMP PUTs
+  `hw/systemtime` (a write to the controller clock; whether it takes effect is
+  UNKNOWN), `device/picture` and `hw/lock`. The lock reads back via
+  `GET hw/lock`, is pushed as `deviceLockChange` and outlived its HTTP
+  connection; it did not block the front panel (REASONED). **Monitoring never
+  PUTs `hw/lock`.**
+- The websocket `/api/v1/websocketchannel` pushes telemetry, operator and
+  display-mode events without any hello (lock events were seen only on VMP's
+  connection, which sent one); its side effects are UNKNOWN, so it stays off
+  the read-only surface — use the GET. The 8082 preview runs at ~51 Mbit/s and
+  shows inputs, not the wall (REASONED): not for monitoring.
 
 **Neither COEX unit answered `rqProMI:` discovery** (OBSERVED on the MX40 Pro;
-the MX30 left eight probes unanswered), so `novasun discover` cannot find COEX
-hardware; it has to be given the address.
+the MX30 left eight probes unanswered), so `novasun discover`'s probe cannot
+find COEX hardware. The MX30 can be found by listening on its announcement
+ports (above); otherwise give it the address. Whether the MX40 Pro announces
+is UNKNOWN.
 
 **On a live show, never open a register-bus session to a COEX controller.** The
 session is exclusive and displaces the VMP session running the show. `bringup`
@@ -155,6 +206,21 @@ and `info` open one unconditionally. `identify()` — and so `serve` and `status
 version you are running before trusting it near a live unit. `listen`,
 `watch --once`, `coex snapshot` and `survey --no-probe` are read-only by
 construction. Use those, and only with the operator's go.
+
+**A COEX trap: `monitor/info` gives a false all-clear** (OBSERVED, one MX30,
+V1.5.1, attended). It keeps cabinets listed and linked after their lines are
+unplugged — all 72 cabinets and cards, every `nextCabinetLinkStatus.linkStatus`
+true, temperatures reading, for the ~8.5 minutes to power-off; only
+`rvCardsRuntime` emptied. Its readings are last-known, not live (REASONED).
+Count connected cabinets from `/api/v1/device/cabinet` (entry count) or
+`/api/v1/screen/cabinet/count` (`CabinetCount`) — both went to 0 — against the
+expected number, and check `outputStatus[].linkStatus` links, which dropped
+within one 2 s poll. Anything that counts cabinets online from `monitor/info`
+reports an unplugged wall as healthy: crewbox's reader graded the unplugged
+fixture "ok, 3 cabinets" (OBSERVED-in-harness, `7c8cf6a`), and novasun did
+until `interpret_coex_status` and `health_reasons` replaced that count. Urgent
+for crewbox; `docs/read-only-monitoring.md` §4, "Unplugged outputs, and
+power-off".
 
 **Four firmware behaviours make naive register reads lie**, all OBSERVED and
 all silent — well-formed frames, `ack = SUCCEEDED`, no error. The two that
@@ -228,10 +294,16 @@ Rules it enforces, worth preserving:
 - **Frame length is not a field.** Only write-requests and read-responses carry
   a payload; a stream reader needs 18 bytes before it knows the total.
 - **Blackout and freeze are swapped** between the VX4S register (1 freeze,
-  2 blackout) and the COEX HTTP API (1 blackout, 2 freeze).
+  2 blackout) and the COEX HTTP API (1 blackout, 2 freeze). The COEX side is
+  OBSERVED on an MX30's `display/state` read-back (2026-09-26).
 - **Input select differs by register, not just by value**, across model
   families.
 - **No literal `%` in argparse help strings** — argparse runs them through
   `%`-formatting and `--help` crashes at runtime. There is a test for it.
 - **Settings live in RAM** until an explicit save to `0x01000001`. Never wire
   that to a slider; flash wear is real.
+- **Filter packet captures on the controller's address** (plus broadcast,
+  multicast and the ports needed), never on your own host's: a host-filtered
+  capture recorded unrelated credentials in cleartext and had to be destroyed.
+  Treat any capture as a secret until reviewed; never commit one. See
+  `docs/capture-workflow.md`.

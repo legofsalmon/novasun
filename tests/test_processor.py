@@ -294,10 +294,14 @@ class TestProcessorCoex:
         processor.freeze()
         assert server.state.display_mode == 2
 
-    def test_brightness_goes_through_screens(self, coex) -> None:
+    def test_brightness_goes_through_every_connected_cabinet(self, coex) -> None:
+        # The cabinet-level write is the one an MX30 honoured; the screen-level
+        # one was ignored (both OBSERVED 2026-09-26). The processor reads back.
         server, processor = coex
         processor.set_brightness(40)
-        assert server.state.screens[0]["brightness"] == pytest.approx(0.4)
+        assert all(c["brightness"] == pytest.approx(0.4) for c in server.state.cabinets)
+        puts = [path for method, path, _b in server.state.requests if method == "PUT"]
+        assert puts == ["/api/v1/device/cabinet/brightness"]
 
     def test_presets_come_from_the_controller(self, coex) -> None:
         server, processor = coex

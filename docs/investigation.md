@@ -97,7 +97,7 @@ address as a live register holding plausible data. The behaviour, the
 poison-read discriminator that defeats it, and a second finding — that reads
 **snap to field boundaries**, so an offset into a multi-byte field silently
 returns that field's start — are documented in
-[`read-only-monitoring.md`](read-only-monitoring.md#5-two-register-bus-traps-that-make-reads-lie).
+[`read-only-monitoring.md`](read-only-monitoring.md#5-four-register-bus-traps-that-make-reads-lie).
 Both are **OBSERVED**, reproduced across a power cycle.
 
 This is the clearest illustration so far of why this repository tracks

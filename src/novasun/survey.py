@@ -20,6 +20,10 @@ Transmission policy is explicit and per-call:
 * ``allow_register_bus`` opens a TCP control session on 5200 when no HTTP API
   answers. Off by default: that session may be exclusive, and taking it from
   NovaLCT mid-show is exactly what a monitoring tool must not do.
+
+Nothing secret is serialised: ``randomPassword``, which ``/api/v1/device/hw``
+serves to any GET (OBSERVED, one MX30), is dropped by the HTTP client before a
+snapshot exists, and nothing here copies a raw payload.
 """
 
 from __future__ import annotations
@@ -39,7 +43,11 @@ SCHEMA_VERSION = 1
 """Bump when the serialised shape changes incompatibly.
 
 Consumers should check this and refuse a version they do not understand rather
-than silently mis-reading fields.
+than silently mis-reading fields. Added fields are compatible and do not bump
+it: ``firmware`` on a device, and ``display`` and ``display_canvases`` in
+``status`` (2026-09-26). ``status.display_mode`` keeps its type and meaning --
+0 normal, 1 blackout, 2 freeze, ``null`` unknown -- and now comes from
+``/api/v1/screen/output/display/state``.
 """
 
 
@@ -52,8 +60,12 @@ class DeviceSurvey:
     family: str = Family.UNKNOWN.value
     model: str | None = None
     model_id: int | None = None
+    """Register-bus model ID for video processors and sending cards; the HTTP
+    API's ``modelID`` for COEX (5138 on the MX30, OBSERVED)."""
     name: str | None = None
     serial: str | None = None
+    firmware: str | None = None
+    """COEX only: ``/api/v1/device/hw`` ``hwVersion`` (REASONED to be the firmware)."""
     control_path: str | None = None
     ethernet_ports: int | None = None
     fibre_ports: int = 0
@@ -73,6 +85,8 @@ class DeviceSurvey:
         if not self.reachable:
             return head + "  (unreachable)"
         parts = [head]
+        if self.firmware:
+            parts.append(f"  firmware: {self.firmware}")
         if self.ethernet_ports is not None:
             ports = f"{self.ethernet_ports}x eth"
             if self.fibre_ports:
@@ -83,8 +97,8 @@ class DeviceSurvey:
             total = self.status.get("cabinets_total")
             if total:
                 parts.append(f"  cabinets: {cabinets}/{total} online")
-            if self.status.get("display_mode") is not None:
-                parts.append(f"  display: {self.status['display_mode']}")
+            # Said even when unknown: a blank would read as "nothing wrong".
+            parts.append(f"  display: {self.status.get('display') or 'unknown'}")
             signal = self.status.get("signal_present")
             if signal is not None:
                 parts.append(f"  signal: {', '.join(signal) or 'none'}")
@@ -147,10 +161,24 @@ def _profile_fields(survey: DeviceSurvey, profile: DeviceProfile) -> None:
 
 
 def _status_from(snapshot: MonitorSnapshot) -> dict[str, Any]:
-    """Flatten a monitor snapshot into the survey's stable shape."""
+    """Flatten a monitor snapshot into the survey's stable shape.
+
+    The display fields come from ``/api/v1/screen/output/display/state``
+    (:func:`novasun.monitor.interpret_display_state`): ``display_mode`` is 0,
+    1 or 2 when every canvas agrees and ``None`` -- unknown, never normal --
+    otherwise; ``display`` names it; ``display_canvases`` carries each canvas
+    with its confidence label from :data:`novasun.monitor.DISPLAY_MODE_CONFIDENCE`
+    (0, 1 and 2 all OBSERVED on one MX30, 2026-09-26).
+
+    ``healthy`` is never true on monitor/info's word alone: counts come from the
+    connected-cabinet sources and ``health_reasons`` says why when it is false
+    (see :func:`novasun.monitor.health_reasons`).
+    """
     hottest = snapshot.hottest
     return {
         "display_mode": snapshot.display_mode,
+        "display": snapshot.display,
+        "display_canvases": [dict(canvas) for canvas in snapshot.display_canvases],
         "cabinets_total": len(snapshot.cabinets),
         "cabinets_online": len([c for c in snapshot.cabinets if c.online]),
         "cabinets_offline": [str(c.identifier) for c in snapshot.offline_cabinets],
@@ -161,7 +189,10 @@ def _status_from(snapshot: MonitorSnapshot) -> dict[str, Any]:
         ),
         "signal_present": snapshot.signal_present,
         "screens": len(snapshot.screens),
+        "connected_cabinets": snapshot.connected_cabinets,
+        "outputs_linked": [o["output_id"] for o in snapshot.outputs if o["linked"]],
         "healthy": snapshot.healthy,
+        "health_reasons": snapshot.health_reasons,
     }
 
 
@@ -180,15 +211,27 @@ def survey_device(
     try:
         with CoexMonitor(address, http_port, timeout=timeout) as monitor:
             snapshot = monitor.poll(include_slow=True)
-        if snapshot.model or snapshot.cabinets or not snapshot.errors:
+        # Reachable when any endpoint answered. The earlier test -- a model,
+        # cabinets, or no errors at all -- called a cabinet-less unit
+        # unreachable as soon as one polled path was absent with a 404, and
+        # /device/hw (never requested on an MX40 Pro, so its answer there is
+        # UNKNOWN) made that easier to hit. Every GET failing still means no
+        # HTTP API.
+        if snapshot.raw:
             result.reachable = True
             result.control_path = "http"
             result.monitoring_available = "http"
             result.model = snapshot.model
             result.name = snapshot.device_name
             result.serial = snapshot.serial
+            result.firmware = snapshot.firmware
+            # snapshot.model already prefers /api/v1/device/hw's name, then its
+            # modelID, to a label, and takes a model from the label only when
+            # a known model name is in it.
             _profile_fields(result, coex_profile_for(snapshot.model))
             result.model = snapshot.model or result.model
+            if result.model_id is None:
+                result.model_id = snapshot.model_id  # reported, even if the table lacks it
             if read_status:
                 result.status = _status_from(snapshot)
             result.errors = [f"{name}: {msg}" for name, msg in snapshot.errors.items()]

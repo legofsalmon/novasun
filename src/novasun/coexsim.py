@@ -13,23 +13,36 @@ and from what published clients expect, and the field names should be confirmed
 against hardware before an application depends on their exact spelling.
 
 The default reproduces the MX40 Pro read on 2026-09-11. ``CoexState(model="MX30")``
-selects instead what an MX30 (firmware V1.5.1, read over SNMP) returned on
-2026-09-26 -- different absent-endpoint semantics, a fuller monitor/info, a
-readable wall geometry, and the two writes later sent to it: ``snmpstate``,
-which honours ``{"state": b}`` and answered Success to ``{"value": true}``
-without changing anything (the simulator treats every other body that way),
-and ``hw/colorBeacon``, which answers an empty 200. See the MX30-like block
-below. One unit of each was read, so where the two differ the
-simulator does not say whether model or firmware is the cause.
+selects instead what an MX30 (hwVersion V1.5.1) returned on 2026-09-26 --
+different absent-endpoint semantics, a fuller monitor/info, a readable wall
+geometry, and the two writes later sent to it: ``snmpstate``, which honours
+``{"state": b}`` and answered Success to ``{"value": true}`` without changing
+anything (the simulator treats every other body that way), and
+``hw/colorBeacon``, which answers an empty 200. A capture of NovaStar VMP
+opening the same unit that evening added four more: identity at
+``/api/v1/device/hw`` (with a ``randomPassword`` field every consumer must
+drop), display state per canvas at ``/api/v1/screen/output/display/state``
+(which reads 2 through a front-panel freeze), the ``hw/lock`` VMP takes, and
+the ``hw/systemtime`` body VMP sends. The unit's UDP announcement can be
+emitted too, off by default. ``CoexState.outputs_unplugged`` reproduces the
+same unit with every output data line pulled and the power left on, as an
+attended session watched it that evening: the connected-cabinet counts go to
+zero while ``monitor/info`` goes on describing a healthy wall -- the false
+all-clear a consumer has to be tested against. See the MX30-like blocks
+below. One unit of each was read, so where the two differ the simulator does
+not say whether model or firmware is the cause.
 
     python -m novasun.coexsim --port 8001
     python -m novasun.coexsim --port 8001 --model MX30
+    python -m novasun.coexsim --port 8001 --model MX30 --announce 127.0.0.1
+    python -m novasun.coexsim --port 8001 --model MX30 --outputs-unplugged
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import socket
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -67,6 +80,16 @@ MX30_ABSENT_GETS = frozenset({
 })
 
 
+#: CoexState's serial and firmware defaults, which describe the MX40-like
+#: unit; the MX30-like profile replaces them when they are left as they are.
+_MX40_SERIAL = "SIM-MX40-0001"
+_MX40_FIRMWARE = "1.5.0"
+
+
+_UNPLUG_MX40 = ("outputs_unplugged is modelled on the MX30-like profile only; what an "
+                "MX40 Pro reports with its outputs unplugged is UNKNOWN")
+
+
 def firmware_profile(model: str) -> str:
     """Which unit's observed behaviour a model name selects."""
     return MX30_LIKE if model.strip().lower() == "mx30" else MX40_LIKE
@@ -83,8 +106,8 @@ class CoexState:
     #: has renamed it: on an MX30 (OBSERVED 2026-09-26) the field was a plain
     #: word carrying no model, so nothing downstream may derive a model from it.
     custom_name: str | None = None
-    serial: str = "SIM-MX40-0001"
-    firmware: str = "1.5.0"
+    serial: str = _MX40_SERIAL
+    firmware: str = _MX40_FIRMWARE  # the MX30-like profile serves it as /device/hw hwVersion
     display_mode: int = 0  # 0 normal, 1 blackout, 2 freeze
     current_preset: str | None = None
     current_input: int | None = None  # filled per firmware profile in __post_init__
@@ -104,10 +127,11 @@ class CoexState:
     #: "answered" as "exists" fails here rather than on site. A test that wants
     #: one served removes it from the set. Only GETs consult either. The
     #: read-only pass sent the MX30 GETs only; a later session the same day,
-    #: with VMP closed, sent it two hw/colorBeacon PUTs and five snmpstate PUTs
-    #: (modelled in PUTS_MX30) and no other write. The PUT of displaymode was never sent
-    #: to either unit, and whether it exists is UNKNOWN, so the simulator still
-    #: accepts it on both profiles.
+    #: with VMP closed, sent it two hw/colorBeacon PUTs and five snmpstate PUTs,
+    #: and VMP's own open, captured that evening, sent hw/systemtime, hw/lock
+    #: and two device/picture PUTs. PUTS_MX30 models all but device/picture.
+    #: The PUT of displaymode was never sent to either unit, and whether it
+    #: exists is UNKNOWN, so the simulator still accepts it on both profiles.
     missing_endpoints: set[str] | None = None
     absent_style: str | None = None  # "404" or "empty-200"
     #: What ``GET /api/v1/device/snmpstate`` reports on the MX30-like profile,
@@ -116,9 +140,63 @@ class CoexState:
     #: the unit was. The MX40-like default ignores it: its GET is the constant
     #: ``False`` that unit returned, and its PUT behaviour is UNKNOWN.
     snmp_enabled: bool = False
+    #: The MX30-like unit's MAC, served by ``/api/v1/device/hw`` and carried
+    #: by its UDP announcement -- the same value in both (OBSERVED). Filled
+    #: per profile; the MX40-like default serves neither.
+    mac: str | None = None
+    #: Who holds ``/api/v1/device/hw/lock`` on the MX30-like profile: the
+    #: caller's IP once a PUT naming ``appids`` has taken it, else ``None``.
+    #: Nothing over HTTP releases it -- VMP sent no unlock, and the unit read
+    #: unlocked again only after VMP had quit, by websocket close or timeout
+    #: (mechanism UNKNOWN) -- so a test models the release by clearing this.
+    lock_ip: str | None = None
+    lock_appids: list[str] = field(default_factory=list)
+    #: The last ``PUT /api/v1/device/hw/systemtime`` body of the shape VMP
+    #: sent (MX30-like profile). Recorded, never applied: no clock is modelled.
+    system_time: dict[str, Any] | None = None
+    #: Every output data line unplugged, the controller left powered -- the
+    #: MX30-like profile only; set it with :meth:`unplug_outputs` or at
+    #: construction. OBSERVED on the MX30 (hwVersion V1.5.1), attended,
+    #: 2026-09-26, lines pulled one at a time 18:59:52Z-19:02:29Z, watched
+    #: read-only (docs/read-only-monitoring.md §4, "Unplugged outputs, and
+    #: power-off"), and reproduced as read once every line was out:
+    #:
+    #: * ``/api/v1/device/cabinet`` answers ``[]`` and
+    #:   ``/api/v1/screen/cabinet/count`` ``CabinetCount`` 0: both count the
+    #:   cabinets connected *now*, not the configured ones;
+    #: * ``monitor/info`` ``outputStatus[].linkStatus`` is false on every
+    #:   output, and each output whose link dropped reads ``status`` 2 (meaning
+    #:   UNKNOWN); the other entries are left as the connected read had them,
+    #:   because whether their status moved was not recorded (UNKNOWN);
+    #: * ``monitor/info`` ``rvCardsRuntime`` is ``[]`` (72 entries before);
+    #: * **and nothing else in ``monitor/info`` moves** -- the false
+    #:   all-clear: every cabinet and card stays listed, every
+    #:   ``nextCabinetLinkStatus.linkStatus`` stays true, and the temperatures,
+    #:   voltages and ``errorBit`` read what they last read, for the ~8.5
+    #:   minutes until power-off (OBSERVED; that they are last-known values
+    #:   rather than live ones is REASONED). Change a cabinet's reading here
+    #:   and ``monitor/info`` will show it, which the unit could not have done
+    #:   with no card connected: set the readings before unplugging;
+    #: * ``/api/v1/screen/output/display/state`` keeps reading the display
+    #:   mode (0 at every 1 Hz poll through the unplugging, OBSERVED), and the
+    #:   UDP announcement carries on (OBSERVED every 3 s throughout).
+    #:
+    #: Not modelled: ``/api/v1/screen`` is served unchanged, though it was not
+    #: re-read with the lines out and the websocket pushed
+    #: ``screenCabinetSizeChange`` at each stage (UNKNOWN whether its geometry
+    #: moved); the intermediate stages (one line out, some lines out), which
+    #: were watched only through monitor/info and the websocket; the
+    #: websocket itself; and plugging back in, which was never done -- setting
+    #: this back to False restores the connected shapes as a simulator
+    #: convention, not an observation. Whether an MX40 Pro does any of this
+    #: is UNKNOWN (it was never watched with a line out), so the MX40-like
+    #: default refuses the setting.
+    outputs_unplugged: bool = False
 
     def __post_init__(self) -> None:
         mx30 = self.mx30_like
+        if self.outputs_unplugged and not mx30:
+            raise ValueError(_UNPLUG_MX40)
         if self.absent_style is None:
             self.absent_style = "empty-200" if mx30 else "404"
         if self.missing_endpoints is None:
@@ -168,6 +246,16 @@ class CoexState:
     def cabinet(self, cabinet_id: int) -> dict[str, Any] | None:
         return next((c for c in self.cabinets if c["id"] == cabinet_id), None)
 
+    def unplug_outputs(self) -> None:
+        """Pull every output data line, leaving the controller powered.
+
+        See :attr:`outputs_unplugged` for what that does and does not change.
+        MX30-like profile only: an MX40 Pro was never watched with a line out.
+        """
+        if not self.mx30_like:
+            raise ValueError(_UNPLUG_MX40)
+        self.outputs_unplugged = True
+
     @property
     def profile(self) -> str:
         return firmware_profile(self.model)
@@ -200,7 +288,13 @@ class _Handler(BaseHTTPRequestHandler):
             return None
 
     def _send(self, code: int, message: str, data: Any = None, status: int = 200) -> None:
-        payload = json.dumps({"code": code, "data": data, "message": message}).encode()
+        # The MX30 sent compact JSON, keys in code/data/message order (OBSERVED:
+        # display/state's 140 B and hw/lock's 58 B bodies are exactly that
+        # encoding). The MX40 Pro's bytes were not retained, so the default
+        # keeps json.dumps's spacing.
+        separators = (",", ":") if self.state.mx30_like else None
+        payload = json.dumps({"code": code, "data": data, "message": message},
+                             separators=separators).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -246,8 +340,9 @@ class _Handler(BaseHTTPRequestHandler):
         # OBSERVED on an MX30, 2026-09-26, on every response, empty and JSON
         # alike. Whether the MX40 Pro sent them is UNKNOWN (its raw headers
         # were not retained), so the default sends none. X-Request-Id is a
-        # fresh value per request here; the structure of the unit's ids is not
-        # modelled. Date is already sent by send_response.
+        # fresh value per request here; on the unit it was one global counter
+        # with a constant suffix (OBSERVED in the VMP capture: 222 consecutive
+        # values), which is not modelled. Date is already sent by send_response.
         if self.state.mx30_like:
             self.send_header("X-Request-Id", str(uuid.uuid4()))
             self.send_header("Vary", "Origin")
@@ -409,16 +504,23 @@ def _input_wire(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _monitor_info(state: CoexState) -> dict[str, Any]:
-    # A cabinet that is offline is simply absent: the real payload carries no
-    # online flag, and absence is the only way it says so (REASONED).
+    # A cabinet that is offline is simply absent here. That was REASONED and
+    # is not what an MX30 does: with every output line unplugged its
+    # monitor/info kept all 72 cabinets, links true and temperatures reading,
+    # until power-off ~8.5 minutes later (OBSERVED, 2026-09-26), while
+    # screen/cabinet/count and device/cabinet went to 0. The MX30-like profile
+    # models that with CoexState.outputs_unplugged; what an MX40 Pro does is
+    # UNKNOWN, so this default does not.
     present = [c for c in state.cabinets if c.get("online", True)]
     return {
-        # With /api/v1/device absent this is the only identity the API offers,
-        # and it is a name, not a model: "<model>_<digits>" on the MX40 Pro
-        # read in 2026-09, a plain word with no model in it on an MX30
-        # (2026-09-26; both OBSERVED, one unit each). The API documents a
-        # custom-name setter, so the field is an operator-settable label whose
-        # "<model>_<digits>" form is a factory default (REASONED).
+        # A name, not a model: "<model>_<digits>" on the MX40 Pro read in
+        # 2026-09, a plain word with no model in it on an MX30 (2026-09-26;
+        # both OBSERVED, one unit each). The API documents a custom-name
+        # setter, so the field is an operator-settable label whose
+        # "<model>_<digits>" form is a factory default (REASONED). With
+        # /api/v1/device absent it is the only identity this default serves:
+        # /api/v1/device/hw was never requested on the MX40 Pro (UNKNOWN
+        # there), while the MX30 carries model and version in it (_mx30_hw).
         "name": state.custom_name or f"{state.model}_000001",
         "runtime": 17160, "totalRuntime": 986580,
         "mainBoardTemperature": {"name": "Main_board Temperature",
@@ -490,9 +592,11 @@ def _presets(state: CoexState) -> dict[str, Any]:
 
 # --- MX30-like firmware profile, as OBSERVED on an MX30, 2026-09-26 ---------
 #
-# One unit, firmware V1.5.1 (read over SNMP on the same day; no field read over
-# the HTTP API carries a controller model or firmware string), read only, after
-# the show -- then, with VMP closed, sent the two writes in PUTS_MX30.
+# One unit, hwVersion V1.5.1, read only after the show -- then, with VMP
+# closed, sent the snmpstate and colorBeacon writes in PUTS_MX30. That pass
+# found no model or firmware string over HTTP only because it never requested
+# /api/v1/device/hw; VMP's open did that evening, and it carries both (see the
+# next block, which also covers display/state, hw/lock and hw/systemtime).
 # Selected with ``CoexState(model="MX30")``; the MX40-like shapes above stay
 # the default. Where the two units differ the simulator does not say whether
 # model or firmware is the cause -- one of each was read. Every value below is
@@ -504,8 +608,11 @@ MX30_LIKE_LABEL = "simlab"
 """monitor/info's ``name`` on the MX30-like unit: a plain word.
 
 OBSERVED: a single alphabetic word with no model in it, equal to no other
-string in any payload. Whether an operator set it is REASONED (the API has a
-custom-name setter), not established. The real word is show data and is not
+string in any payload that pass read. ``/api/v1/device/hw``, read later that
+day, carries it too as ``customName`` (REASONED: the capture's masking gave
+both strings one token); the simulator serves the same label in both. Whether
+an operator set it is REASONED (the API has a custom-name setter), not
+established. The real word is show data and is not
 this one; the point is that nothing downstream may read a model out of it.
 """
 
@@ -515,7 +622,11 @@ MX30_LIKE_CHAIN = 24  # cabinets per port, chain positions 0..23
 MX30_LIKE_CABINET = 128  # every cabinet was 128x128
 MX30_LIKE_SCREEN_ID = "{00000000-0000-0000-0000-000000000030}"
 MX30_LIKE_GROUP_ID = "{00000000-0000-0000-0000-00000000g030}"
-MX30_LIKE_MODEL_ID = 5138  # 0x1412: inputPort.ModelId, canvases[].outputCardModeId and every device/input modelId; what it identifies is UNKNOWN
+#: 0x1412. OBSERVED as the MX30's own ``modelID`` in ``/api/v1/device/hw``,
+#: beside ``name`` "MX30" (and repeated by firmware/list and backcard/info).
+#: That the other occurrences -- inputPort.ModelId, canvases[].outputCardModeId
+#: and every device/input modelId -- name the same thing is REASONED.
+MX30_LIKE_MODEL_ID = 5138
 MX30_LIKE_CARD_RUNTIME = 30_000_000  # rvCardsRuntime[].runtime: one value on every card, static across 7 minutes; meaning UNKNOWN
 #: errorBit[0].value: one value per output port, none 65535 (the MX40 record's
 #: constant); identical across snapshots. Meaning UNKNOWN.
@@ -584,6 +695,12 @@ def _mx30_defaults(state: CoexState) -> None:
     """Fill a fresh MX30-like state the way ``__post_init__`` fills the default."""
     if state.custom_name is None:
         state.custom_name = MX30_LIKE_LABEL
+    if state.serial == _MX40_SERIAL:
+        state.serial = MX30_LIKE_SERIAL
+    if state.firmware == _MX40_FIRMWARE:
+        state.firmware = MX30_LIKE_HW_VERSION
+    if state.mac is None:
+        state.mac = MX30_LIKE_MAC
     if not state.screens:
         state.screens = [
             {"screenID": MX30_LIKE_SCREEN_ID, "name": "Wall", "width": 1536, "height": 768,
@@ -696,18 +813,23 @@ def _mx30_input_wire(source: dict[str, Any], channel: int) -> dict[str, Any]:
     }
 
 
-def _mx30_output_status(linked: set[int]) -> list[dict[str, Any]]:
+def _mx30_output_status(
+    linked: set[int], dropped: frozenset[int] = frozenset()
+) -> list[dict[str, Any]]:
     # OBSERVED: 33 entries -- outputID 2048-2057 type 0, 2058-2077 type 5,
     # 2078-2079 type 1, and one all-zero type-3 entry; outputCardID 8 on all
     # but the last. linkStatus was true on 2048-2052 inclusive, which included
     # two ports carrying no cabinets (why is UNKNOWN); status was 0 everywhere
     # except one unlinked type-0 port reading 2. What the types and statuses
     # mean is UNKNOWN; a consumer that alarms on any non-zero status alarms
-    # here, as it would have on the unit.
+    # here, as it would have on the unit. ``dropped`` are outputs whose link
+    # went down with the unit powered: each went linkStatus false and read
+    # status 2 (OBSERVED, every line unplugged, 2026-09-26).
     entries = []
     for output_id in range(2048, 2058):
         entries.append({"linkStatus": output_id in linked, "outputCardID": 8,
-                        "outputID": output_id, "status": 2 if output_id == 2053 else 0, "type": 0})
+                        "outputID": output_id,
+                        "status": 2 if output_id == 2053 or output_id in dropped else 0, "type": 0})
     for output_id in range(2058, 2078):
         entries.append({"linkStatus": False, "outputCardID": 8, "outputID": output_id,
                         "status": 0, "type": 5})
@@ -733,9 +855,18 @@ def _mx30_monitor_info(state: CoexState) -> dict[str, Any]:
     # every card, meaning UNKNOWN) while the rvCards[] runtime fields are 0 --
     # as on the MX40. Only cabinets[] and screenSourceStatus[] reorder between
     # reads; the simulator keeps them in order.
+    #
+    # With CoexState.outputs_unplugged (OBSERVED, every output line pulled,
+    # unit powered): cabinets[] and every reading in it are served exactly as
+    # before -- the false all-clear, a stale list with every link still true --
+    # while every output's link goes false (status 2 on the ones that dropped)
+    # and rvCardsRuntime empties. Nothing else here was seen to change.
     present = [c for c in state.cabinets if c.get("online", True)]
     ports = sorted({2048 + int(c.get("port", 0)) for c in state.cabinets})
     linked = set(range(ports[0], ports[-1] + 1)) if ports else set()
+    dropped: frozenset[int] = frozenset()
+    if state.outputs_unplugged:
+        linked, dropped = set(), frozenset(linked)
     cabinets = []
     for c in present:
         output_id = 2048 + int(c.get("port", 0))
@@ -781,14 +912,14 @@ def _mx30_monitor_info(state: CoexState) -> dict[str, Any]:
         "cardMonitorInfo": None, "temperatureInfos": None, "voltageInfos": None,
         "controllerPortMonitorInfos": [{"controllerPortID": 0, "status": 0},
                                        {"controllerPortID": 1, "status": 2}],
-        "outputStatus": _mx30_output_status(linked),
+        "outputStatus": _mx30_output_status(linked, dropped),
         "powerMonitorInfos": [{"powerID": 0, "status": 0}],
         "screenSourceStatus": [
             {"groupID": int(s["groupId"]), "inputCardID": 0,
              "linkStatus": bool(s.get("connected")), "portID": s["id"], "status": 0}
             for s in state.inputs
         ],
-        "rvCardsRuntime": [
+        "rvCardsRuntime": [] if state.outputs_unplugged else [
             {"cabinetID": c["id"], "runtime": MX30_LIKE_CARD_RUNTIME, "rvCardID": c["id"],
              "totalRuntime": 3999960 + 60 * n}
             for n, c in enumerate(present)
@@ -818,7 +949,8 @@ def _mx30_layer(layer_id: int, source: dict[str, Any], position: dict[str, int],
 def _mx30_input_port(source: dict[str, Any]) -> dict[str, Any]:
     # OBSERVED: screens[].inputPort describes the selected input with
     # LogicId (= the input id) and GroupId (= its groupId), a ModelId of 5138
-    # whose meaning is UNKNOWN, a FirmwareVersion whose four fields are all
+    # (the MX30's model ID per /device/hw; that it means the same here is
+    # REASONED), a FirmwareVersion whose four fields are all
     # empty, and two nested blocks: InputDetailInfo (a second, different
     # GroupId for the same port -- relation UNKNOWN) and InputSrcInfo, live
     # signal detail the input list does not carry (SourceFieldRate 5000 for
@@ -936,12 +1068,29 @@ def _mx30_screens(state: CoexState) -> dict[str, Any]:
 
 
 def _mx30_cabinet_count(state: CoexState) -> dict[str, Any]:
-    # OBSERVED shape of /api/v1/screen/cabinet/count (first exercised on this unit).
+    # OBSERVED shape of /api/v1/screen/cabinet/count (first exercised on this
+    # unit). It counts connected cabinets: 72 with the wall connected and 0
+    # with every output line unplugged (OBSERVED, attended), so it is a
+    # presence signal where monitor/info is not. CabinetCountInBlackList is 0
+    # in both states: read 0 connected, and the websocket's
+    # ScreensCabinetsCountChange carried 0 at every stage of the unplugging
+    # (both OBSERVED); the HTTP value with the lines out was not recorded.
     return {"list": [
-        {"CabinetCount": sum(1 for c in state.cabinets if c.get("screenID") == s["screenID"]),
+        {"CabinetCount": 0 if state.outputs_unplugged else
+         sum(1 for c in state.cabinets if c.get("screenID") == s["screenID"]),
          "CabinetCountInBlackList": 0, "ScreenID": s["screenID"]}
         for s in state.screens
     ]}
+
+
+def _mx30_device_cabinets(state: CoexState) -> list[dict[str, Any]]:
+    # The cabinets connected now, not the configured ones: 0 entries with every
+    # output line unplugged (OBSERVED, attended, 2026-09-26). A cabinet marked
+    # offline stays listed here, as before: what one missing cabinet does to
+    # this list was not observed (UNKNOWN).
+    if state.outputs_unplugged:
+        return []
+    return [_mx30_cabinet_wire(c) for c in state.cabinets]
 
 
 def _mx30_device_input(state: CoexState) -> dict[str, Any]:
@@ -985,13 +1134,271 @@ def _mx30_device_input(state: CoexState) -> dict[str, Any]:
     }
 
 
+# --- MX30-like: what VMP read and wrote when it opened (OBSERVED 2026-09-26) --
+#
+# From a capture of NovaStar VMP connecting to the same MX30 (hwVersion
+# V1.5.1) that evening, then an attended read-only test of display state. Key
+# names, nesting, list lengths and types are as the unit sent them; every
+# value is synthetic unless a comment says OBSERVED. Show data -- the unit's
+# name, serial, MAC, UUID, addresses and times -- is replaced throughout.
+
+MX30_LIKE_MODEL_NAME = "MX30"  # /device/hw ``name`` (OBSERVED); the model, not the operator's label
+#: /device/hw ``hwVersion`` (OBSERVED), the string SNMP reported as firmware.
+#: Which of the unit's version strings is "the firmware" is UNKNOWN.
+MX30_LIKE_HW_VERSION = "V1.5.1"
+MX30_LIKE_SERIAL = "SIMULATED-MX30-00001"  # synthetic; 20 characters, as the unit's ``sn`` was
+MX30_LIKE_MAC = "00:00:5e:00:53:30"  # RFC 7042 documentation range; lower-case, colon-separated, as sent
+MX30_LIKE_DEVICE_UUID = "{00000000-0000-0000-0000-000000000031}"  # synthetic; braced, as sent
+MX30_LIKE_ADDRESS = "192.0.2.30"  # RFC 5737; the unit's own address is show data
+MX30_LIKE_CANVAS_ID = 2048  # the wall's only canvas, keyed the same in display/state and the websocket
+#: ``randomPassword`` as the simulator serves it. **Every consumer must drop
+#: this field** before logging, storing, displaying or serialising a
+#: ``/device/hw`` reply: the unit served a real 8-digit value to a bare,
+#: unauthenticated GET (OBSERVED), and what it is for is UNKNOWN. This value
+#: is deliberately fake so a test can assert it never gets through. It is also
+#: a substring of the synthetic UUIDs, so a test should look for the key.
+MX30_LIKE_FAKE_RANDOM_PASSWORD = "00000000"
+
+#: The UDP ports the MX30 announced itself on, in the order of every burst,
+#: from source port 54650 to the subnet broadcast, every 3 s (OBSERVED: 117
+#: bursts of four). Which of them VMP listens on is UNKNOWN.
+MX30_ANNOUNCE_PORTS = (54622, 54623, 54624, 54700)
+MX30_ANNOUNCE_INTERVAL = 3.0
+MX30_LIKE_HTTPS_PORT = "9001"  # announced as ``https``; whether anything listens there is UNKNOWN
+
+#: The body keys of ``PUT /api/v1/device/hw/systemtime`` as VMP sent it
+#: (OBSERVED, once): the time in UTC as separate fields, plus the client's
+#: IANA time-zone name. The ``{"value": iso}`` body novasun's client used to
+#: send is not this shape.
+SYSTEMTIME_KEYS = ("clientTimezone", "second", "minute", "hour", "isUTC", "day", "month", "year")
+
+
+def _size() -> dict[str, int]:
+    return {"width": 0, "height": 0}
+
+
+def _span() -> dict[str, int]:
+    return {"min": 0, "max": 0, "step": 0}
+
+
+def _mx30_capability() -> dict[str, Any]:
+    """``/device/hw`` ``capability``: 161 keys in the order the unit sent them.
+
+    OBSERVED values: capabilityVersion "V4.1.0"; snmp, artNet, NTP,
+    inputImageEcho, outputImageEcho and allowChangeWorkMode true; every
+    ``hwMonitor`` flag false. Every other leaf is a placeholder of the observed
+    type (0, false, "", null; lists at their observed lengths): the real values
+    were not retained, so a false here -- ``supportColorBeacon`` and
+    ``disableSetSystemTime`` included -- is not evidence of anything.
+    """
+    return {
+        "deviceType": 0, "systemLatency": False, "processing": False, "schedule": False,
+        "rotation": False, "mirror": False, "3D": False, "multiUserThreeD": False,
+        "multiUserThreeDNum": None, "threeDFrame": False, "threeDSource": None,
+        "threeDFrameList": [], "hideThreeDRightOffset": False, "CabinetManagementTool": False,
+        "HDR10": False, "inputBackup": False, "sync": False, "genLock": False,
+        "frameRateMultiplication": False, "shutterSync": False,
+        "photoelectricConversion": False, "lowLatency": False, "additionalFrameDelay": False,
+        "blackLevel": False, "baseImageCount": 0, "inputZoom": False, "negPosSupport": False,
+        "maxCapacity": 0, "presetImage": False, "abnormalImage": False,
+        "customTestImage": False, "inputImageEcho": True, "outputImageEcho": True,
+        "HDCP": False, "limitToFull": False, "highLights": False, "shadow": False,
+        "signalTransmitter": False, "ABL": False, "EDE": False, "ITMO": False,
+        "dynamicEngineIndependentControl": False, "colorReplace": False,
+        "colorCalibration": False, "systemRestore": False, "3DLUT": False, "PIP": False,
+        "CSC": False, "inputAutoSwitch": False, "curtainOverspread": False, "ipem": False,
+        "hdmiModeSetting": False, "frameRemaping": False, "curve": False,
+        "noVideoSignal": False, "maxWidth": 0, "maxHeight": 0, "presetImageMaxNum": 0,
+        "outputBitDepth": [0] * 3, "bitDepth": 0, "internalBitDepths": [0] * 2,
+        "colorSpaceType": [0] * 4, "colorGamutType": [0] * 4, "mosaic": {"mode": None},
+        "presetImageSize": _size(), "presetImageSetInfo": {"maxWidth": 0, "maxHeight": 0},
+        "additionalFrameDelayRange": _span(), "frameRateMultiplicationRange": _span(),
+        "threeDRightEyeOffsetRange": _span(),
+        "hwMonitor": dict.fromkeys((  # OBSERVED: every flag false
+            "armSupported", "fanSupported", "fpgaSupported", "inputSubCardSupported",
+            "mainBordSupported", "netWorkSubCardSupported", "opticalCardSupported"), False),
+        "virtualMode": None, "videoController": False, "defaultCurtainSize": _size(),
+        "maxCurtainSize": _size(), "minCurtainSize": _size(), "layerNumberLimit": 0,
+        "supportSizeList": {"mode": [_size() for _ in range(2)]}, "maxCurtainArea": 0,
+        "maxCurtainCapacity": 0, "maxLayerArea": 0, "modifyCurtainSize": False,
+        "modifyLayerCoordinate": False, "modifyLayerSize": False, "supportLayerCut": False,
+        "supportLayerBorder": False, "supportLayerZOrder": False, "minLayerSize": _size(),
+        "maxLayerSize": _size(), "supportLayerStretch": False, "supportLayerOriginSize": False,
+        "supportLayerScreenSize": False, "supportLayerFollow": False, "blackLevelOutPutBit": 0,
+        "cabinetsPainter": False, "maxSourceDefaultWidth": 0, "maxSourceDefaultHeight": 0,
+        "channelNumber": 0, "presetNameCheck": False, "customGamutNameChange": False,
+        "customRate": False, "supportSourcecutTypes": None, "minSourcecutResolutionProduct": 0,
+        "minSourcecutWidth": 0, "minSourcecutHeight": 0, "cinemaTxTest": False,
+        "xyzTxTestPattern": False, "supportArtNetProtocol": False, "minFrameOffset": 0,
+        "maxFrameOffset": 0, "supportHDRSourceTypes": "", "upgradeMaxTimeout": 0,
+        "ncpManager": False,
+        "layout": {"mode": [{"value": 0, "comment": "", "minCurtainSize": _size(),
+                             "step": _size()} for _ in range(2)]},
+        "presetNumber": 0, "maxScreenNumber": 0, "switchSourceType": 0, "audioSources": None,
+        "hwScreenNeedHandleProcessing": False, "supportCable": False, "systemBackup": False,
+        "controllerPosition": False, "allowChangeWorkMode": True, "curtainManage": False,
+        "dP14Mode": False, "internalSource": False, "outputSyncSource": False,
+        "outputSyncInner": False, "phaseShift": False, "cabinetsStore": False,
+        "controllerMaintenance": False, "cabinetMaintenance": False, "preset": False,
+        "artNet": True, "artNetMaxStartAddressList": [0] * 4, "snmp": True, "userManual": False,
+        "shortcutKey": False, "isSupportModifyOpticalMode": False,
+        # 19 numbers, some fractional (count and float|int typing OBSERVED; the
+        # values were not recorded): a type-illustrative placeholder.
+        "frameRateTable": [23.98, 24, 25, 29.97, 30, 47.95, 48, 50, 59.94, 60, 72, 75, 85,
+                           100, 119.88, 120, 143.86, 144, 240],
+        "supportPxToPx": False, "monitorType": 0, "disableSetSystemTime": False,
+        "lineHWScreenType": 0, "layerDelete": False, "imageEnhance": False,
+        "supportColorBeacon": False, "supportRGBWRatioAdjust": False,
+        "isSupportGamutAsync": False, "correctSpeedVersion": "", "NTP": True,
+        "mfCardUpdate": False, "deviceLocation": False, "smartHWScreen": False,
+        "firmwarePainter": False, "sdi12GCustomHDR10": False, "dPCustomHDR10": False,
+        "isSupportCloud": False, "capabilityVersion": "V4.1.0",
+        "isSupportBatchCorrectionSwitch": False, "isSupportMvr": False,
+        "isUpgradeHttpMode": False,
+    }
+
+
+def _mx30_hw(state: CoexState) -> dict[str, Any]:
+    """``GET /api/v1/device/hw``: identity, versions and capabilities.
+
+    OBSERVED on the MX30 (5698 B, read four times, differing only in
+    memoryUsed and memoryFree): 44 keys in this order. ``name`` "MX30" and
+    ``modelID`` 5138 in one object settle what 5138 names; ``hwVersion`` is the
+    "V1.5.1" SNMP reported as firmware; ``mac`` is the MAC the announcement
+    carries. OBSERVED values kept: type "G3.5", swVersion "1.0.0", mcuVersion
+    "V1.0.0", fpgaVersion "V1.0.0.S1.T1.V9", configVersion "V1.4.0.1",
+    ``softVersion.Version`` "", thirdPartySn and thirdPartySerial "", mode 3,
+    deviceWorkMode 0, ``encipher.authState`` 0. ``customName`` carries the
+    same label as monitor/info's ``name`` here; that the unit's two strings
+    are equal is REASONED (the capture's masking gave both one token). Every
+    other value is synthetic or a placeholder of the observed type.
+
+    ``randomPassword`` is served, as the unit served it, to any GET -- see
+    :data:`MX30_LIKE_FAKE_RANDOM_PASSWORD`, and drop it.
+    """
+    sub_board = {"type": 0, "sn": "", "modelId": 0}
+    return {
+        "name": MX30_LIKE_MODEL_NAME, "customName": state.custom_name or MX30_LIKE_LABEL,
+        "modelID": MX30_LIKE_MODEL_ID, "sn": state.serial,
+        "thirdPartySn": "", "thirdPartySerial": "", "mac": state.mac or MX30_LIKE_MAC,
+        "type": "G3.5", "netPortBandWidth": 0, "hwVersion": state.firmware,
+        "swVersion": "1.0.0", "mcuVersion": "V1.0.0", "fpgaVersion": "V1.0.0.S1.T1.V9",
+        "mcuVersionRemark": "", "fpgaVersionRemark": "",
+        "softVersion": {"Package": "", "Version": "", "Architecture": "", "Maintainer": "",
+                        "Description": ""},
+        "configVersion": "V1.4.0.1", "ip": MX30_LIKE_ADDRESS, "WirelessIpAddress": "",
+        "mode": 3, "companyName": "", "capability": _mx30_capability(), "deviceWorkMode": 0,
+        "IpNetmask": "255.255.255.0", "IpGateway": "192.0.2.1", "ethMode": "", "hostName": "",
+        "Dns": None, "dhcp": False, "configIP": "", "Series": 0,
+        "uptime": 3600, "memorySize": 0, "memoryUsed": 0, "memoryFree": 0,
+        "subBoardInfo": {"inputSn": dict(sub_board), "sasaSn": dict(sub_board),
+                         "sasbSn": dict(sub_board), "qsfpSn": dict(sub_board)},
+        "customIp": "", "deviceUUID": MX30_LIKE_DEVICE_UUID, "groupName": "",
+        "isAllowSingleDev": False, "supportInputSubCardNum": 0, "supportOutputSubCardNum": 0,
+        "encipher": {"vendorID": 0, "authState": 0, "authStartTime": "", "authEndTime": "",
+                     "isOverRange": False},
+        # Consumers must drop this field -- see MX30_LIKE_FAKE_RANDOM_PASSWORD.
+        "randomPassword": MX30_LIKE_FAKE_RANDOM_PASSWORD,
+    }
+
+
+def _mx30_display_state(state: CoexState) -> dict[str, Any]:
+    """``GET /api/v1/screen/output/display/state``: display mode per canvas.
+
+    OBSERVED on the MX30: ``displayMode`` read 0 while the wall was live and 2
+    for the whole of a front-panel freeze, polled once a second through it
+    (60 GETs, 2026-09-26), so a plain GET is enough for a read-only monitor
+    (REASONED). The first attended freeze sweep polled
+    ``/device/screen/displaymode`` (absent: an empty 200) and missed this
+    endpoint. 0 normal, 2 freeze and 1 blackout are all OBSERVED (the
+    blackout once, attended, on the same unit and evening).
+    ``mappingState[].enable`` read false throughout; its meaning is UNKNOWN.
+    Here the mode tracks :attr:`CoexState.display_mode`, so a test simulates
+    a front-panel freeze by setting it.
+    """
+    return {
+        "mappingState": [{"canvasID": MX30_LIKE_CANVAS_ID, "enable": False}],
+        "displayState": [{"canvasID": MX30_LIKE_CANVAS_ID, "displayMode": state.display_mode}],
+    }
+
+
+def _mx30_lock(state: CoexState) -> dict[str, Any]:
+    """``GET /api/v1/device/hw/lock``: whether a control application holds the unit.
+
+    OBSERVED ``{"locked": 0, "ip": ""}`` before VMP took the lock (and, by the
+    operator's report, after VMP quit). After VMP's PUT the unit pushed ``deviceLockChange {"locked": 1, "ip": <requester>}``
+    over the websocket; no GET was made while it was held, so that the GET
+    then reads the same pair is REASONED from the event, and is what is served.
+    """
+    held = state.lock_ip is not None
+    return {"locked": 1 if held else 0, "ip": state.lock_ip if held else ""}
+
+
+def _mx30_put_lock(handler: _Handler, body: Any) -> None:
+    """``PUT /api/v1/device/hw/lock``: taken by a body naming ``appids``.
+
+    OBSERVED once: ``{"appids": ["LCTPro<id>"]}`` -- an app-id list, not VMP's
+    ``Application-Id`` header, and no IP -- answered ``{"code": 0, "data":
+    null}``, and the pushed ``deviceLockChange`` named the requesting host's
+    IP (REASONED to be the requester's: it was also the only subscriber's).
+    Modelled only that far:
+
+    * a body with a non-empty list of strings under ``appids`` takes the lock
+      for the caller; what the list names or excludes is UNKNOWN;
+    * any other body answers the same envelope and changes nothing (UNKNOWN on
+      the unit; a simulator convention, like snmpstate's);
+    * a second taker simply replaces the first (UNKNOWN on the unit);
+    * nothing over HTTP releases it (VMP sent no unlock), and the lock blocks
+      nothing here: the front-panel freeze went through while it was held
+      (OBSERVED); whether it blocks other API clients is UNKNOWN.
+    """
+    appids = body.get("appids") if isinstance(body, dict) else None
+    if isinstance(appids, list) and appids and all(isinstance(a, str) for a in appids):
+        handler.state.lock_ip = handler.client_address[0]
+        handler.state.lock_appids = list(appids)
+    handler._send(0, "Success", None)
+
+
+def _mx30_put_systemtime(handler: _Handler, body: Any) -> None:
+    """``PUT /api/v1/device/hw/systemtime`` with the body VMP sent.
+
+    OBSERVED once, as the first of VMP's writes on opening: the fields of
+    :data:`SYSTEMTIME_KEYS` (UTC, ``isUTC`` true) answered ``{"code": 0,
+    "data": null}``. So merely opening VMP writes the controller's clock and
+    time zone. A body of exactly those keys is recorded in
+    :attr:`CoexState.system_time`; no clock is modelled, and whether the unit
+    applies it is UNKNOWN. Any other body -- the old ``{"value": iso}``
+    included -- gets the same Success and is not recorded: REASONED to be a
+    no-op on this firmware, by analogy with snmpstate's ``{"value": ...}``.
+    """
+    if isinstance(body, dict) and set(body) == set(SYSTEMTIME_KEYS):
+        handler.state.system_time = dict(body)
+    handler._send(0, "Success", None)
+
+
+def announcement_payload(state: CoexState, api_port: int = DEFAULT_PORT) -> bytes:
+    """The MX30's UDP announcement: 96 bytes of bare JSON at the default port.
+
+    OBSERVED layout, byte for byte: no header, no terminator, compact JSON,
+    keys in this order, ``apiPort`` and ``https`` strings, ``authType`` and
+    ``workMode`` integers (0 on the unit; meanings UNKNOWN), ``data`` a
+    one-element list. It carries no model, name, serial, version or IP -- a
+    listener takes the address from the datagram's source. ``apiPort`` is the
+    simulator's own port so a listener can follow it here; the unit sent
+    "8001".
+    """
+    entry = {"apiPort": str(api_port), "mac": state.mac or MX30_LIKE_MAC,
+             "authType": 0, "workMode": 0, "https": MX30_LIKE_HTTPS_PORT}
+    return json.dumps({"data": [entry]}, separators=(",", ":")).encode("ascii")
+
+
 #: GETs the MX30-like profile serves. Anything not here -- and anything in
 #: ``missing_endpoints`` -- answers the empty HTTP 200 (OBSERVED for unknown
 #: paths and absent documented paths alike). ``/api/v1/device/audio`` is
 #: present on this unit (HTTP 404 on the MX40 Pro).
 GETS_MX30 = {
     "/api/v1/screen": _mx30_screens,
-    "/api/v1/device/cabinet": lambda state: [_mx30_cabinet_wire(c) for c in state.cabinets],
+    "/api/v1/device/cabinet": _mx30_device_cabinets,
     "/api/v1/device/input/sources": lambda state: [_mx30_input_wire(s, n + 1) for n, s in enumerate(state.inputs)],
     "/api/v1/preset": _presets,
     "/api/v1/device/monitor/info": _mx30_monitor_info,
@@ -1002,6 +1409,10 @@ GETS_MX30 = {
     "/api/v1/device/snmpstate": lambda state: {"state": state.snmp_enabled},
     "/api/v1/screen/cabinet/count": _mx30_cabinet_count,
     "/api/v1/device/input": _mx30_device_input,
+    # First requested by VMP's open, 2026-09-26 (OBSERVED shapes; see above).
+    "/api/v1/device/hw": _mx30_hw,
+    "/api/v1/screen/output/display/state": _mx30_display_state,
+    "/api/v1/device/hw/lock": _mx30_lock,
 }
 
 
@@ -1039,6 +1450,8 @@ def _mx30_put_color_beacon(handler: _Handler, body: Any) -> None:
 PUTS_MX30 = {
     "/api/v1/device/snmpstate": _mx30_put_snmpstate,
     "/api/v1/device/hw/colorBeacon": _mx30_put_color_beacon,
+    "/api/v1/device/hw/lock": _mx30_put_lock,
+    "/api/v1/device/hw/systemtime": _mx30_put_systemtime,
 }
 
 
@@ -1080,6 +1493,7 @@ class SimulatedCoexController(ThreadingHTTPServer):
     def __init__(
         self, host: str = "127.0.0.1", port: int = DEFAULT_PORT, state: CoexState | None = None
     ) -> None:
+        self._announcer: tuple[threading.Event, threading.Thread] | None = None
         super().__init__((host, port), _Handler)
         self.state = state or CoexState()
         self.verbose = False
@@ -1093,19 +1507,97 @@ class SimulatedCoexController(ThreadingHTTPServer):
         thread.start()
         return thread
 
+    def start_announcing(
+        self,
+        host: str = "127.0.0.1",
+        ports: tuple[int, ...] = MX30_ANNOUNCE_PORTS,
+        interval: float = MX30_ANNOUNCE_INTERVAL,
+    ) -> None:
+        """Send :func:`announcement_payload` to each of ``ports`` every ``interval`` s.
+
+        Off unless called. The unit sent to its subnet broadcast from source
+        port 54650; this sends to ``host`` (loopback by default) from an
+        ephemeral port, first burst at once, one datagram per port in order,
+        then a sleep -- the unit's phase drifted as a sleep loop's would
+        (REASONED). Pointing ``host`` at a broadcast address puts the
+        datagrams on that network. MX30-like profile only: whether an MX40 Pro
+        announces is UNKNOWN.
+        """
+        if not self.state.mx30_like:
+            raise ValueError("only the MX30-like profile announces; whether an MX40 Pro does is UNKNOWN")
+        if self._announcer is not None:
+            raise RuntimeError("already announcing")
+        stop = threading.Event()
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sender.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+        def run() -> None:
+            try:
+                while not stop.is_set():
+                    payload = announcement_payload(self.state, self.address[1])
+                    for port in ports:
+                        try:
+                            sender.sendto(payload, (host, port))
+                        except OSError:
+                            pass  # a lost datagram is what UDP does; keep the cadence
+                    stop.wait(interval)
+            finally:
+                sender.close()
+
+        thread = threading.Thread(target=run, name="coexsim-announce", daemon=True)
+        self._announcer = (stop, thread)
+        thread.start()
+
+    def stop_announcing(self) -> None:
+        if self._announcer is None:
+            return
+        stop, thread = self._announcer
+        self._announcer = None
+        stop.set()
+        thread.join(timeout=5.0)
+
+    @property
+    def announcing(self) -> bool:
+        return self._announcer is not None
+
+    def server_close(self) -> None:
+        self.stop_announcing()
+        super().server_close()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a fake COEX controller")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--model", default="MX40 Pro", help="MX40 Pro (default) or MX30")
+    parser.add_argument(
+        "--announce", metavar="HOST", default=None,
+        help="MX30 only: also send its UDP announcement to HOST every 3 s (off by default)",
+    )
+    parser.add_argument(
+        "--outputs-unplugged", action="store_true",
+        help="MX30 only: serve the unit as read with every output data line unplugged "
+             "and the power on -- connected-cabinet counts 0, monitor/info unchanged",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
-    server = SimulatedCoexController(args.host, args.port, CoexState(model=args.model))
+    try:
+        state = CoexState(model=args.model, outputs_unplugged=args.outputs_unplugged)
+    except ValueError as exc:
+        parser.error(str(exc))
+    server = SimulatedCoexController(args.host, args.port, state)
     server.verbose = args.verbose
     host, port = server.address
-    print(f"simulating {server.state.model} HTTP API on http://{host}:{port}")
+    print(f"simulating {server.state.model} HTTP API on http://{host}:{port}"
+          + (" with every output unplugged" if state.outputs_unplugged else ""))
+    if args.announce:
+        try:
+            server.start_announcing(args.announce)
+        except ValueError as exc:
+            server.server_close()
+            parser.error(str(exc))
+        print(f"announcing to {args.announce} on UDP {', '.join(map(str, MX30_ANNOUNCE_PORTS))}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

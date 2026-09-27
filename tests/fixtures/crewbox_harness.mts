@@ -7,7 +7,23 @@
 //
 // CREWBOX defaults to ~/crewbox; the fixture defaults to mx40_like_api.json
 // (an MX40 Pro, 2026-09-11). mx30_like_api.json is an MX30 on firmware v1.5.1
-// (operator-reported), 2026-09-26.
+// (operator-reported), 2026-09-26. mx30_unplugged_api.json is the same MX30
+// with every output data line unplugged and the unit powered (OBSERVED,
+// attended, 2026-09-26): /api/v1/device/cabinet [] and screen/cabinet/count 0,
+// while monitor/info still lists every cabinet with its links up and its
+// temperatures reading -- the false all-clear. See that file's __about__.
+//
+// What crewbox's reader made of it, OBSERVED in this harness on 2026-09-26 at
+// crewbox commit 7c8cf6a: the unplugged wall graded
+// {"health":"ok","summary":"3 cabinets, 44°C"} on polls 1, 2 and 21 --
+// exactly what it grades the connected mx30_like_api.json -- with 3 of 3
+// cabinets online (every one onlineAssumed), all from monitor/info. The
+// reader did fetch the empty /api/v1/device/cabinet (its cached layout held 0
+// cabinets) but compares a missing cabinet against that layout only when the
+// two lists share an id, and an empty layout shares none; the one visible
+// difference was brightness, undefined instead of 50, because it is read from
+// the first /device/cabinet entry. A later crewbox commit may differ: re-run
+// and compare.
 //
 // The two units spell "absent" differently, so the fake fetch knows two
 // markers. On the MX40 Pro an absent endpoint answered 404: a fixture entry
@@ -57,10 +73,13 @@ const io = {
 function show(label: string, r: any) {
   const withTemp = r.cabinets.filter((c: any) => c.temperature !== undefined).length
   const online = r.cabinets.filter((c: any) => c.online).length
+  const assumed = r.cabinets.filter((c: any) => c.onlineAssumed).length
   console.log(`\n=== ${label} ===`)
   console.log(`model=${r.model}  reportedName=${r.reportedName}  serial=${r.serial}  firmware=${r.firmware}`)
   console.log(`temperature=${r.temperature}  fanSpeed=${r.fanSpeed}  fanRpm=${r.fanRpm}  brightness=${r.brightness}  snmpEnabled=${r.snmpEnabled}  isBackup=${r.isBackup}  displayMode=${r.displayMode}  answered=${r.answered}`)
-  console.log(`cabinets: ${r.cabinets.length} total, ${online} online, ${withTemp} with temperature; ids=${JSON.stringify(r.cabinets.map((c: any) => c.id))}`)
+  console.log(`cabinets: ${r.cabinets.length} total, ${online} online (${assumed} of them onlineAssumed), ${withTemp} with temperature; ids=${JSON.stringify(r.cabinets.map((c: any) => c.id))}`)
+  // Per-cabinet health as the reader reports it: what a pane would paint.
+  console.log(`health  : ${JSON.stringify(r.cabinets.map((c: any) => ({ id: c.id, online: c.online, ...(c.onlineAssumed ? { onlineAssumed: true } : {}), ...(c.temperature !== undefined ? { temperature: c.temperature } : {}) })))}`)
   console.log(`inputs  : ${JSON.stringify(r.inputs)}`)
   console.log(`errors  : ${JSON.stringify(r.errors)}`)
   console.log(`absent  : ${JSON.stringify(r.absent)}`)
@@ -71,6 +90,16 @@ const reader = new CoexReader('192.0.2.1', io as any)
 const first = await reader.poll()
 show('POLL 1 (topology + status)', first)
 console.log(`requested: ${JSON.stringify(requested)}`)
+// The fixture's own presence signals, beside what the reader made of them.
+// The layout count is read off the reader's private cache (read, not changed).
+const count = api['/api/v1/screen/cabinet/count']?.list?.[0]?.CabinetCount
+const outputs = api['/api/v1/device/monitor/info']?.outputStatus ?? []
+// The MX40 fixture's outputStatus carries no linkStatus at all: say so, not "none linked".
+const linked = outputs.some((o: any) => 'linkStatus' in o)
+  ? JSON.stringify(outputs.filter((o: any) => o.linkStatus === true).map((o: any) => o.outputID))
+  : 'n/a (no linkStatus field)'
+console.log(`fixture : /device/cabinet ${Array.isArray(api['/api/v1/device/cabinet']) ? api['/api/v1/device/cabinet'].length : 'n/a'} entries, screen/cabinet/count ${count ?? 'n/a'}, outputStatus linked ${linked}`)
+console.log(`reader's cached layout from /api/v1/device/cabinet: ${(reader as any).topology?.cabinets?.length ?? 'none'} cabinets`)
 
 // The real unit returns monitor/info cabinets in a different order every call.
 api['/api/v1/device/monitor/info'].cabinets.reverse()

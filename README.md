@@ -96,7 +96,7 @@ src/novasun/
   simulator.py   a fake controller: real chain topology, real error behaviour
   coexsim.py     a fake COEX controller serving the HTTP API
   survey.py      read-only view of a whole network, in a versioned JSON shape
-  passive.py     zero-transmission listener for discovery traffic
+  passive.py     zero-transmission listener: discovery traffic, COEX announcements
   monitor.py     read-only polling: a client that cannot write, rate limited
   snmp.py        COEX SNMP OID map (no client -- use your own)
   cli.py         command line front end
@@ -129,6 +129,13 @@ python -m novasun survey --json      # discovery + status, no writes
 python -m novasun watch 192.168.1.10 # poll one COEX controller read-only
 python -m novasun listen             # observe, transmitting nothing at all
 ```
+
+`listen` hears two things on receive-only sockets: register-bus discovery on
+UDP 3800, and the unsolicited announcements an MX30 broadcasts every 3 s on
+UDP 54622 (and 54623, 54624, 54700; `--announcement-ports all`), which give
+its address, MAC and API port with nothing sent. OBSERVED on one MX30; whether
+other COEX models announce is unknown. An announcement says the controller is
+up, not that its wall is connected.
 
 For consumers that observe rather than control — see
 [`docs/read-only-monitoring.md`](docs/read-only-monitoring.md), which documents

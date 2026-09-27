@@ -165,18 +165,62 @@ def cmd_survey(args: argparse.Namespace) -> int:
     return 0 if result.reachable else 1
 
 
-def cmd_listen(args: argparse.Namespace) -> int:
-    """Observe discovery traffic without transmitting anything."""
-    from .passive import PassiveListener, build_inventory
+def _announcement_ports(text: str) -> tuple[int, ...]:
+    """Parse ``listen --announcement-ports``: comma-separated ports, or ``all``."""
+    from .passive import ANNOUNCEMENT_PORTS
 
+    if text.strip().lower() == "all":
+        return ANNOUNCEMENT_PORTS
+    try:
+        ports = tuple(int(part) for part in text.split(",") if part.strip())
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a list of ports: {text!r}") from None
+    if not ports or any(not 0 < port < 65536 for port in ports):
+        raise argparse.ArgumentTypeError(f"ports must be 1 to 65535: {text!r}")
+    return ports
+
+
+def cmd_listen(args: argparse.Namespace) -> int:
+    """Observe discovery traffic and COEX announcements without sending anything.
+
+    Both channels by default: UDP 3800 (rqProMI:/rpProMI:) and the COEX
+    self-announcement on UDP 54622. Every socket is receive-only. The one
+    kernel-level transmission is the IGMP report caused by joining the 3800
+    multicast group; the start line says so when it happens, and
+    ``--no-multicast`` removes it.
+    """
+    from .discovery import MULTICAST_GROUP, UDP_PORT
+    from .passive import DEFAULT_ANNOUNCEMENT_PORTS, PassiveListener
+
+    discovery = args.only != "announcements"
+    announcements = args.only != "discovery"
     log_path = Path(args.log) if args.log else None
-    listener = PassiveListener(log_path=log_path)
-    host, port = listener.address
+    listener = PassiveListener(
+        args.bind,
+        UDP_PORT if discovery else None,
+        join_multicast=discovery and not args.no_multicast,
+        log_path=log_path,
+        announcement_ports=(
+            (args.announcement_ports or DEFAULT_ANNOUNCEMENT_PORTS) if announcements else ()
+        ),
+    )
+    bound = ", ".join(
+        f"{host}:{port} ({channel})" for channel, (host, port) in listener.addresses
+    )
+    if listener.multicast == MULTICAST_GROUP:
+        sending = (
+            f"sending no datagrams; joined {MULTICAST_GROUP}, so the kernel sends "
+            "IGMP membership reports (--no-multicast avoids them)"
+        )
+    else:
+        sending = "transmitting nothing"
     print(
-        f"listening on {host}:{port}, transmitting nothing "
+        f"listening on {bound}, {sending} "
         f"({'until ctrl-c' if args.duration is None else f'for {args.duration:g}s'})",
         file=sys.stderr,
     )
+    for where, error in sorted(listener.bind_failures.items()):
+        print(f"could not bind {where}: {error}", file=sys.stderr)
     if not args.quiet:
         listener.observers.append(lambda o: print(o.describe(), flush=True))
     try:
@@ -186,7 +230,7 @@ def cmd_listen(args: argparse.Namespace) -> int:
     finally:
         listener.stop()
     print()
-    print(build_inventory(listener.observations).summary())
+    print(listener.inventory().summary())
     return 0
 
 
@@ -568,11 +612,37 @@ def build_parser() -> argparse.ArgumentParser:
     survey_parser.set_defaults(func=cmd_survey)
 
     listen_parser = sub.add_parser(
-        "listen", help="observe discovery traffic, transmitting nothing"
+        "listen",
+        help="observe discovery traffic and COEX announcements on receive-only sockets",
     )
     listen_parser.add_argument("--duration", type=float, help="seconds; default forever")
     listen_parser.add_argument("--log", help="append raw datagrams to a file")
     listen_parser.add_argument("--quiet", action="store_true")
+    listen_parser.add_argument(
+        "--only",
+        choices=("discovery", "announcements"),
+        help="listen only to UDP 3800 discovery traffic, or only to COEX "
+        "announcements (default: both)",
+    )
+    listen_parser.add_argument(
+        "--announcement-ports",
+        type=_announcement_ports,
+        metavar="PORTS",
+        help="comma-separated COEX announcement ports, or 'all' for 54622, 54623, "
+        "54624 and 54700 (default 54622; an MX30 sends the same payload to each)",
+    )
+    listen_parser.add_argument(
+        "--no-multicast",
+        action="store_true",
+        help="do not join 224.224.125.119 on UDP 3800; joining makes the kernel "
+        "send IGMP membership reports",
+    )
+    listen_parser.add_argument(
+        "--bind",
+        default="0.0.0.0",
+        help="address to bind (default 0.0.0.0; a socket bound to an interface "
+        "address does not receive broadcasts)",
+    )
     listen_parser.set_defaults(func=cmd_listen)
 
     watch = sub.add_parser("watch", help="read-only status polling of a COEX controller")

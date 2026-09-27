@@ -11,6 +11,17 @@ from novasun.coexsim import SimulatedCoexController
 from novasun.simulator import SimulatedController
 from novasun.survey import SCHEMA_VERSION, Survey, survey_device, survey_network
 
+from test_display_state import (
+    DISPLAY_STATE,
+    FAKE_RANDOM_PASSWORD,
+    HARDWARE,
+    MONITOR_INFO,
+    SyntheticCoexUnit,
+    display_state,
+    hardware,
+    monitor_info,
+)
+
 
 def closed_port() -> int:
     with socket.socket() as probe:
@@ -62,6 +73,73 @@ class TestCoexSurvey:
         device = survey_device(host, http_port=port, control_port=closed_port())
         assert not device.status["healthy"]
         assert device.status["cabinets_offline"] == [str(coex.state.cabinets[2]["id"])]
+
+    def test_an_unreadable_display_is_null_and_unknown(self, coex) -> None:
+        """Never 0, never "normal": a consumer must not render it as live."""
+        coex.state.missing_endpoints.add(DISPLAY_STATE)
+        host, port = coex.address
+        device = survey_device(host, http_port=port, control_port=closed_port())
+        assert device.status["display_mode"] is None
+        assert device.status["display"] == "unknown"
+        assert device.status["display_canvases"] == []
+        assert "  display: unknown" in device.summary().splitlines()
+
+
+class TestSyntheticMx30Survey:
+    """Against a synthetic unit serving what the MX30 served (see test_display_state.py)."""
+
+    @pytest.fixture()
+    def unit(self):
+        server = SyntheticCoexUnit({
+            MONITOR_INFO: monitor_info("Stage left"),
+            HARDWARE: hardware(),
+            DISPLAY_STATE: display_state(2),
+        })
+        yield server
+        server.stop()
+
+    def test_model_comes_from_hw_when_the_label_is_not_one(self, unit) -> None:
+        host, port = unit.address
+        device = survey_device(host, http_port=port, control_port=closed_port())
+        assert device.model == "MX30" and device.name == "Stage left"
+        assert device.model_id == 5138 and device.ethernet_ports == 10
+        assert device.firmware == "V1.5.1"
+        assert device.status["display_mode"] == 2 and device.status["display"] == "freeze"
+
+    def test_survey_json_carries_no_secret(self, unit) -> None:
+        """What ``survey --json`` prints is ``Survey.to_dict()`` dumped."""
+        host, port = unit.address
+        survey = Survey(devices=[survey_device(host, http_port=port, control_port=closed_port())])
+        text = json.dumps(survey.to_dict(), indent=2) + survey.summary()
+        assert "V1.5.1" in text  # /device/hw was read
+        assert FAKE_RANDOM_PASSWORD not in text
+        assert "randomPassword" not in text
+
+    def test_the_schema_grew_without_breaking(self, unit) -> None:
+        """Additive only, so schema_version stays 1: display_mode keeps its type."""
+        host, port = unit.address
+        restored = json.loads(json.dumps(Survey(devices=[
+            survey_device(host, http_port=port, control_port=closed_port())
+        ]).to_dict()))
+        assert restored["schema_version"] == SCHEMA_VERSION == 1
+        device = restored["devices"][0]
+        assert device["firmware"] == "V1.5.1"
+        assert {"display_mode", "cabinets_total", "cabinets_online", "cabinets_offline",
+                "hottest_cabinet", "signal_present", "screens", "healthy",
+                "display", "display_canvases"} <= set(device["status"])
+        assert isinstance(device["status"]["display_mode"], int)
+
+    def test_one_absent_path_does_not_make_a_unit_unreachable(self) -> None:
+        """A cabinet-less unit answering 404 on /device/hw still has an HTTP API."""
+        unit = SyntheticCoexUnit({MONITOR_INFO: monitor_info("Stage left"), HARDWARE: 404})
+        try:
+            host, port = unit.address
+            device = survey_device(host, http_port=port, control_port=closed_port())
+        finally:
+            unit.stop()
+        assert device.reachable and device.control_path == "http"
+        assert any(error.startswith("hardware:") for error in device.errors)
+        assert device.model is None and device.name == "Stage left"
 
 
 class TestRegisterBusSurvey:

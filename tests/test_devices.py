@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
+import re
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
+from novasun import coex as coex_module
 from novasun import devices
-from novasun.coex import CoexClient, CoexError, diff_snapshots, snapshot
+from novasun.coex import CoexClient, CoexError, diff_snapshots, redact_secrets, snapshot
 from novasun.coexsim import CoexState, SimulatedCoexController
 from novasun.devices import Family, identify, profile_for
 from novasun.simulator import SimulatedController
@@ -107,6 +112,48 @@ class TestProfiles:
         assert "10x Ethernet" in summary and "(assumed)" not in summary
         assert "OBSERVED" in summary
 
+    def test_the_mx30_model_id_is_the_observed_5138(self) -> None:
+        """OBSERVED 2026-09-26 (one MX30, hwVersion V1.5.1): GET /api/v1/device/hw
+        returned name "MX30" and modelID 5138 in one object."""
+        mx30 = devices.coex_profile_for("MX30")
+        assert mx30.model_id == 5138 and mx30.model_known
+        provenance = devices.PROVENANCE["coex:MX30"]
+        for fact in ("model_id 5138", "OBSERVED", "/api/v1/device/hw", '"MX30"',
+                     "firmware/list", "backcard/info", "REASONED"):
+            assert fact in provenance, fact
+        # The HTTP API's ID, not a register-bus one: kept out of MODELS.
+        assert 5138 not in devices.MODELS
+        assert not profile_for(5138).is_known
+        # Only the MX30's ID is known; the rest stay None rather than guessed.
+        assert devices.COEX_MODEL_IDS == {"MX30": 5138}
+        for name, profile in devices.COEX_MODELS.items():
+            if name != "mx30":
+                assert profile.model_id is None, name
+
+    def test_coex_profiles_resolve_by_model_id(self) -> None:
+        assert devices.coex_profile_for_model_id(5138) is devices.coex_profile_for("MX30")
+        for unknown in (None, 0, 9999, True, "5138", 5138.0):
+            assert devices.coex_profile_for_model_id(unknown) is devices.GENERIC_COEX, unknown
+
+    def test_hardware_names_the_model_by_name_then_by_id(self) -> None:
+        mx30 = devices.coex_profile_for("MX30")
+        assert devices.coex_profile_from_hardware("MX30", None) is mx30
+        assert devices.coex_profile_from_hardware("", 5138) is mx30
+        assert devices.coex_profile_from_hardware(None, 5138) is mx30
+        assert devices.coex_profile_from_hardware("MX99 Ultra", 5138) is mx30
+        assert devices.coex_profile_from_hardware("MX40 Pro", 5138).name == "MX40 Pro"
+        for name, model_id in (("Stage left", None), (None, None), ("MX99", 7)):
+            assert devices.coex_profile_from_hardware(name, model_id) is devices.GENERIC_COEX
+
+    def test_a_coex_model_id_prints_in_decimal(self) -> None:
+        """5138 is the number the payloads carry; 0x1412 would read as a
+        register-bus ID. Register-bus models keep hex."""
+        mx30 = devices.Identification("127.0.0.1", devices.coex_profile_for("MX30")).summary()
+        assert "  model        MX30  (modelID 5138)" in mx30.splitlines()
+        assert "0x1412" not in mx30
+        vx4s = devices.Identification("127.0.0.1", profile_for(0x6107)).summary()
+        assert "  model        VX4S  (0x6107)" in vx4s.splitlines()
+
     def test_generic_coex_profile_is_an_assumption_not_a_reading(self) -> None:
         generic = devices.GENERIC_COEX
         assert generic.is_known and not generic.model_known
@@ -160,16 +207,75 @@ class TestCoexClient:
         assert coex_server.state.cabinet(target)["brightness"] == pytest.approx(0.4)
         assert coex_server.state.cabinets[0]["brightness"] == pytest.approx(1.0)
 
-    def test_screen_brightness_cascades_to_its_cabinets(self, coex, coex_server) -> None:
-        coex.set_screen_brightness(["screen-1"], 0.25)
-        assert all(
-            cabinet["brightness"] == pytest.approx(0.25)
-            for cabinet in coex_server.state.cabinets
-        )
+    def test_screen_brightness_refuses_the_body_an_mx30_ignored(self, coex, coex_server) -> None:
+        # {idList, ratio} was answered Success and ignored by an MX30 (OBSERVED
+        # 2026-09-26), so the client refuses to send it at all.
+        from novasun.coex import IgnoredWrite
+
+        before = [cabinet["brightness"] for cabinet in coex_server.state.cabinets]
+        with pytest.raises(IgnoredWrite):
+            coex.set_screen_brightness(["screen-1"], 0.25)
+        assert [cabinet["brightness"] for cabinet in coex_server.state.cabinets] == before
+        assert not any(method == "PUT" for method, _p, _b in coex_server.state.requests)
 
     def test_preset_recall(self, coex, coex_server) -> None:
         coex.apply_preset("preset-2")
         assert coex_server.state.current_preset == "preset-2"
+
+    def test_new_reads_are_gets_of_the_observed_paths(self) -> None:
+        client = CoexClient("127.0.0.1", closed_port())
+        sent: list[tuple] = []
+        client.request = lambda method, path, body=None: sent.append((method, path, body))
+        client.display_state()
+        client.hardware_info()
+        client.lock_state()
+        assert sent == [
+            ("GET", "/api/v1/screen/output/display/state", None),
+            ("GET", "/api/v1/device/hw", None),
+            ("GET", "/api/v1/device/hw/lock", None),
+        ]
+
+    def test_nothing_writes_the_lock(self) -> None:
+        """The lock is what a VMP session holds (OBSERVED: VMP took it with a
+        PUT when it opened). No method may PUT, POST or DELETE it."""
+        source = inspect.getsource(coex_module)
+        calls = re.findall(r'request\(\s*"(\w+)",\s*f?"([^"]+)"', source)
+        assert calls, "the pattern no longer finds request calls"
+        assert ("GET", "/api/v1/device/hw/lock") in calls
+        for method, path in calls:
+            if "lock" in path:
+                assert method == "GET", (method, path)
+        assert "hw/lock" in inspect.getdoc(CoexClient)  # the reason is written down
+
+    def test_system_time_sends_the_body_vmp_sent(self) -> None:
+        """OBSERVED shape (VMP, one MX30, 2026-09-26): UTC fields, isUTC true,
+        the client's zone name; keys in VMP's order. Never sent by novasun."""
+        client = CoexClient("127.0.0.1", closed_port())
+        sent: list[tuple] = []
+        client.request = lambda method, path, body=None: sent.append((method, path, body))
+
+        plus_one = timezone(timedelta(hours=1))
+        client.set_system_time(datetime(2026, 9, 26, 19, 1, 54, tzinfo=plus_one), "Etc/UTC")
+        client.set_system_time("2026-09-26T19:01:54+01:00", "Etc/UTC")
+        expected = {"clientTimezone": "Etc/UTC", "second": 54, "minute": 1, "hour": 18,
+                    "isUTC": True, "day": 26, "month": 9, "year": 2026}
+        assert sent == [("PUT", "/api/v1/device/hw/systemtime", expected)] * 2
+        assert list(sent[0][2]) == ["clientTimezone", "second", "minute", "hour",
+                                    "isUTC", "day", "month", "year"]
+        assert "value" not in sent[0][2]  # the old, unobserved body
+
+        sent.clear()
+        client.set_system_time("2026-09-27T00:30:00+01:00", "Etc/UTC")  # the date rolls back
+        assert (sent[0][2]["day"], sent[0][2]["hour"], sent[0][2]["minute"]) == (26, 23, 30)
+
+    def test_system_time_refuses_a_naive_time(self) -> None:
+        client = CoexClient("127.0.0.1", closed_port())
+        sent: list[tuple] = []
+        client.request = lambda method, path, body=None: sent.append((method, path, body))
+        for naive in (datetime(2026, 9, 26, 19, 1, 54), "2026-09-26T19:01:54"):
+            with pytest.raises(ValueError):
+                client.set_system_time(naive, "Etc/UTC")
+        assert sent == []
 
     def test_errors_surface_as_exceptions(self, coex) -> None:
         with pytest.raises(CoexError) as error:
@@ -179,6 +285,48 @@ class TestCoexClient:
         with pytest.raises(CoexError) as error:
             coex.request("GET", "/api/v1/device/nonexistent")
         assert error.value.code == 6  # NotSupport, as real firmware answers
+
+
+class TestRedaction:
+    """``randomPassword`` was served to a bare GET of /device/hw (OBSERVED)."""
+
+    def test_secret_named_keys_are_dropped_at_any_depth(self) -> None:
+        payload = {
+            "name": "MX30",
+            "randomPassword": "00000000",
+            "cloud": {"username": "", "password": "", "node": ""},
+            "list": [{"PASSWORD": "x", "Passwd": "y", "keep": 1}, "text", 3],
+        }
+        assert redact_secrets(payload) == {
+            "name": "MX30",
+            "cloud": {"username": "", "node": ""},
+            "list": [{"keep": 1}, "text", 3],
+        }
+        assert payload["randomPassword"] == "00000000"  # the input is not mutated
+
+    def test_everything_else_passes_through(self) -> None:
+        for value in (None, 0, "randomPassword", [1, 2], {"a": {"b": [None]}}, {1: "x"}):
+            assert redact_secrets(value) == value
+
+    def test_the_client_redacts_every_response(self, monkeypatch) -> None:
+        """Through CoexClient.request, so no caller can see the field."""
+        import io
+
+        coex = CoexClient("127.0.0.1", closed_port())
+
+        class _Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        body = b'{"code":0,"data":{"name":"MX30","randomPassword":"00000000"},"message":"Success"}'
+        monkeypatch.setattr(
+            coex_module.urllib.request, "urlopen", lambda request, timeout: _Response(body)
+        )
+        assert coex.hardware_info() == {"name": "MX30"}
+        assert coex.request("GET", "/api/v1/device/hw") == {"name": "MX30"}
 
 
 class TestSnapshotDiff:
@@ -277,6 +425,10 @@ class TestIdentify:
         the generic profile's port count marked as the assumption it is.
         """
         coex_server.state.custom_name = "Stage left"
+        # /device/hw absent, as the simulator's default may or may not serve
+        # it: this pins the behaviour without it. With it, see
+        # tests/test_coex_identity.py.
+        coex_server.state.missing_endpoints.add("/api/v1/device/hw")
         host, port = coex_server.address
         identification = identify(host, timeout=2.0, http_port=port, register_bus=False)
 

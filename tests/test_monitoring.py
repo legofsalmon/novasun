@@ -16,6 +16,7 @@ from novasun.monitor import (
     MonitorSnapshot,
     _interpret,
     MONITORING_ENDPOINTS,
+    SLOW_ENDPOINTS,
     CoexMonitor,
     RateLimiter,
     ReadOnlyCoexClient,
@@ -28,6 +29,11 @@ from novasun.passive import (
     decode_reply,
 )
 
+#: Paths the COEX simulator may or may not serve, depending on its profile and
+#: version. Tests that are about their *absence* withhold them explicitly.
+DISPLAY_STATE = "/api/v1/screen/output/display/state"
+HARDWARE = "/api/v1/device/hw"
+
 
 class TestPassiveListener:
     def test_module_contains_no_send_path(self) -> None:
@@ -36,7 +42,8 @@ class TestPassiveListener:
         code = "\n".join(
             line for line in source.splitlines() if not line.strip().startswith("#")
         )
-        for forbidden in (".send(", ".sendto(", ".sendall(", ".sendmsg("):
+        for forbidden in (".send(", ".sendto(", ".sendall(", ".sendmsg(",
+                          ".connect(", ".connect_ex("):
             assert forbidden not in code, f"{forbidden} appears in passive.py"
         # PROBE is imported only to recognise other people's probes, never sent.
         assert "sendto(PROBE" not in code
@@ -168,14 +175,22 @@ class TestReadOnlyClient:
 
         for call in (
             lambda: client.set_display_mode(1),
-            lambda: client.set_screen_brightness(["screen-1"], 0.5),
+            lambda: client.set_cabinet_brightness([1], 0.5),
             lambda: client.select_input(1),
             lambda: client.apply_preset("preset-1"),
             lambda: client.set_snmp(True),
             lambda: client.set_working_mode(True),
+            lambda: client.set_system_time("2026-01-01T00:00:00+00:00", "Etc/UTC"),
         ):
             with pytest.raises(WriteAttempted):
                 call()
+
+        # set_screen_brightness refuses before it gets that far: its body was
+        # ignored by an MX30, so no client sends it (OBSERVED 2026-09-26).
+        from novasun.coex import IgnoredWrite
+
+        with pytest.raises(IgnoredWrite):
+            client.set_screen_brightness(["screen-1"], 0.5)
 
         # And nothing reached the device.
         assert server.state.display_mode == 0
@@ -193,16 +208,20 @@ class TestCoexMonitor:
         server.server_close()
 
     def test_poll_builds_a_snapshot(self, server) -> None:
+        # Whether an MX40 Pro serves display/state or /device/hw is UNKNOWN
+        # (never requested there); withheld here, as a 404 would be.
+        server.state.missing_endpoints.update({DISPLAY_STATE, HARDWARE})
         host, port = server.address
         with CoexMonitor(host, port, interval=0.0) as monitor:
             snapshot = monitor.poll()
 
         assert snapshot.model == "MX40 Pro"
-        # Display mode is not readable over HTTP on a real MX40 Pro (the GET
-        # answers 404, OBSERVED), and the simulator now says so by default: the
-        # field stays None and the endpoint is recorded, not raised.
+        # An unreadable display state stays None and "unknown" -- never
+        # normal -- and the endpoint is recorded, not raised.
         assert snapshot.display_mode is None
-        assert "display_mode" in snapshot.errors
+        assert snapshot.display == "unknown"
+        assert "display_state" in snapshot.errors
+        assert "  display     unknown" in snapshot.summary().splitlines()
         assert len(snapshot.cabinets) == 8
         assert snapshot.healthy
         assert snapshot.hottest is not None
@@ -217,31 +236,49 @@ class TestCoexMonitor:
         assert all(method == "GET" for method, _path, _body in server.state.requests)
 
     def test_slow_endpoints_are_cached_between_polls(self, server) -> None:
-        # This test is about caching, so every slow endpoint must actually
-        # answer; an endpoint that 404s is re-tried each poll by design.
+        # This test is about caching, so every documented slow endpoint should
+        # answer; one that fails is re-tried each poll by design, and which do
+        # depends on what the simulator serves, so the count is taken from the
+        # first poll rather than assumed.
         server.state.missing_endpoints.clear()
         host, port = server.address
         with CoexMonitor(host, port, interval=0.0) as monitor:
-            monitor.poll()
+            first_snapshot = monitor.poll()
             first = len(server.state.requests)
             server.state.requests.clear()
             monitor.poll()
             second = len(server.state.requests)
+        cached = [name for name in SLOW_ENDPOINTS if name not in first_snapshot.errors]
         # Topology and identity are not re-read every tick.
+        assert {"device", "cabinets", "presets"} <= set(cached)
         assert second < first
-        assert second == len(MONITORING_ENDPOINTS) - 3
+        assert second == len(MONITORING_ENDPOINTS) - len(cached)
+
+    def test_the_polled_endpoints(self) -> None:
+        """display/state replaced the displaymode GET absent on both units read;
+        /device/hw is identity, so it is in the slow tier."""
+        assert MONITORING_ENDPOINTS["display_state"] == DISPLAY_STATE
+        assert MONITORING_ENDPOINTS["hardware"] == HARDWARE
+        assert "/api/v1/device/screen/displaymode" not in MONITORING_ENDPOINTS.values()
+        assert "display_state" not in SLOW_ENDPOINTS
+        assert "hardware" in SLOW_ENDPOINTS
+        # Read-only by construction: the lock and the preview are not polled.
+        assert "/api/v1/device/hw/lock" not in MONITORING_ENDPOINTS.values()
+        assert "/api/v1/device/picture" not in MONITORING_ENDPOINTS.values()
 
     def test_unreachable_endpoints_are_recorded_not_raised(self, server) -> None:
+        server.state.missing_endpoints.add(DISPLAY_STATE)
         host, port = server.address
         monitor = CoexMonitor(host, port, interval=0.0)
         monitor.client  # noqa: B018 - constructed above
         snapshot = monitor.poll()
-        # Two documented endpoints answer HTTP 404 on a real MX40 Pro
-        # (OBSERVED), and the simulator withholds them by default. Each must
-        # degrade the snapshot, not break the poll -- and /device/backup, once
-        # this test's example of an absent endpoint, turned out to exist.
+        # /api/v1/device answers HTTP 404 on a real MX40 Pro (OBSERVED), and
+        # the simulator withholds it by default; display/state is withheld
+        # here. Each must degrade the snapshot, not break the poll -- and
+        # /device/backup, once this test's example of an absent endpoint,
+        # turned out to exist.
         assert "device" in snapshot.errors
-        assert "display_mode" in snapshot.errors
+        assert "display_state" in snapshot.errors
         assert "backup" not in snapshot.errors
         assert snapshot.model == "MX40 Pro"
 
@@ -254,6 +291,9 @@ class TestCoexMonitor:
         as the model.
         """
         server.state.custom_name = "Stage left"
+        # With /device/hw absent, as on every unit before the VMP capture; a
+        # unit that serves it names its model there (tests/test_coex_identity.py).
+        server.state.missing_endpoints.add(HARDWARE)
         host, port = server.address
         with CoexMonitor(host, port, interval=0.0) as monitor:
             snapshot = monitor.poll()
@@ -287,12 +327,14 @@ class TestRealShapes:
         from novasun.monitor import interpret_monitor_info
 
         status = interpret_monitor_info(MX40_LIKE_MONITOR_INFO)
-        assert status["cabinets_total"] == 3
-        assert status["cabinets_online"] == 3
-        assert status["temperature_c"] == 41          # hottest receiving card
+        assert status["cabinets_listed"] == 3
+        assert status["temperature_c"] == 41          # hottest listed card
         assert status["main_board_temperature_c"] == 42
         assert status["main_board_voltage_v"] == 11.45
-        assert status["links_ok"] == 2
+        assert status["links_listed_ok"] == 2
+        # monitor/info alone never claims cabinets are online: an unplugged
+        # MX30 kept them listed and linked (OBSERVED 2026-09-26).
+        assert "cabinets_online" not in status and "cabinets_total" not in status
 
     def test_monitor_info_never_raises_on_nonsense(self) -> None:
         from novasun.monitor import interpret_monitor_info

@@ -1,0 +1,36 @@
+{
+ "__about__": "The unsolicited UDP announcement of one NovaStar MX30 (hwVersion V1.5.1), as OBSERVED on 2026-09-26 in a passive IPv4 packet capture: real byte layout, synthetic MAC and IPs. \"payload\" is the whole UDP payload as a string: exactly 96 bytes of ASCII JSON with no header, no terminator and no application checksum, byte-identical in every datagram (468 over six minutes: before VMP opened, while VMP held the unit's lock, through a front-panel freeze and after VMP quit). Keys, order, compact spacing and value types are OBSERVED: apiPort and https are strings -- the HTTP API port and an HTTPS port (whether anything listens on 9001 is UNKNOWN); mac is a lower-case colon-separated string equal to the Ethernet source address and to GET /api/v1/device/hw's mac (OBSERVED); authType and workMode are integers, only 0 seen, meanings UNKNOWN (pairing them with /device/hw's encipher.authState and deviceWorkMode is REASONED and weak); data is a one-element array (whether it can hold more is UNKNOWN). No model, name, serial, version, IP, lock or display state is carried, so an unchanged payload says nothing about the unit's state. A listener learns the unit's IP (from the IP header only), MAC, API port and HTTPS port; one GET of /api/v1/device/hw then gives model, name, serial and version. value_spans gives the first and last byte offset, inclusive, of each value in the payload, quotes included for strings (OBSERVED on the real payload; a MAC is always 17 characters, so they hold here). Wire (OBSERVED): from UDP source port 54650 to the subnet-directed broadcast (Ethernet broadcast), one datagram to each of UDP 54622, 54623, 54624 and 54700, always in that order, in a burst spanning at most 0.97 ms; a burst every 3 s (interval mean 3.0024 s, standard deviation 6.3 ms, no gaps in 117 bursts); DF set, TTL 64. The phase drifted smoothly, about +1.8 ms a burst, with no reset when VMP connected or quit (OBSERVED), which suggests a sleep-style loop that no client triggers (REASONED). VMP sent no discovery probe of its own on IPv4 and connected to the announced apiPort 5 ms after a burst (REASONED, strongly: VMP finds COEX units from this announcement); which of the four ports it listens on is UNKNOWN. A receive-only socket bound to any of the four ports hears it without transmitting anything, but only inside the broadcast domain (REASONED: a subnet-directed broadcast is not forwarded between subnets by default). Whether other MX30s, other firmware or the MX40 Pro announce is UNKNOWN; every earlier listen in this project was bound to UDP 3800 only and could not have heard it. The announcement tracks the controller, not the wall: in a later attended session it continued every 3 s with every output line unplugged and stopped at once when the unit was powered off (OBSERVED). source_ip, destination_ip and the MAC are synthetic (RFC 5737 TEST-NET-1, RFC 7042 documentation range); source_ip and the MAC are tests/fixtures/mx30_like_api.json's /api/v1/device/hw ip and mac. Nothing here says what another MX30, another model or another firmware does. Generated from tests/conftest.py (MX30_LIKE_ANNOUNCEMENT); tests/test_fixtures.py asserts they agree.",
+ "destination_ip": "192.0.2.255",
+ "destination_ports": [
+  54622,
+  54623,
+  54624,
+  54700
+ ],
+ "interval_s": 3.0,
+ "payload": "{\"data\":[{\"apiPort\":\"8001\",\"mac\":\"00:00:5e:00:53:30\",\"authType\":0,\"workMode\":0,\"https\":\"9001\"}]}",
+ "source_ip": "192.0.2.30",
+ "source_port": 54650,
+ "value_spans": {
+  "apiPort": [
+   20,
+   25
+  ],
+  "authType": [
+   64,
+   64
+  ],
+  "https": [
+   87,
+   92
+  ],
+  "mac": [
+   33,
+   51
+  ],
+  "workMode": [
+   77,
+   77
+  ]
+ }
+}

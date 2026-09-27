@@ -138,6 +138,10 @@ class Device:
         self._lock = threading.RLock()
         self._backoff = FIRST_BACKOFF
         self.state = DeviceState(address=address)
+        # COEX: the most cabinets seen connected, and the outputs that carried
+        # them, so an unplug reads as "N of M disconnected" rather than 0 of 0.
+        self._max_connected: int | None = None
+        self._carrying_outputs: set[int] = set()
 
     # --- connection ---------------------------------------------------------
 
@@ -268,12 +272,34 @@ class Device:
             # raised TypeError, and killed the refresh thread -- the second time
             # an uncaught exception here froze the UI. Anything it still cannot
             # make sense of is recorded as a state, never raised.
-            from ..monitor import interpret_monitor_info
+            #
+            # Counts come from the connected-cabinet endpoints, never from
+            # monitor/info, which kept an unplugged MX30's 72 cabinets listed
+            # and linked for minutes (OBSERVED 2026-09-26).
+            from ..coex import CoexError
+            from ..monitor import interpret_coex_status
 
+            cabinets = count = None
+            coex = getattr(processor, "coex", None)
+            if coex is not None:
+                try:
+                    cabinets = coex.cabinets()
+                except (CoexError, OSError, ValueError):
+                    cabinets = None
+                try:
+                    count = coex.cabinet_count()
+                except (CoexError, OSError, ValueError):
+                    count = None
             try:
-                status.update(interpret_monitor_info(monitoring))
+                status.update(interpret_coex_status(
+                    monitoring, cabinets, count,
+                    expected=self._max_connected, carrying=self._carrying_outputs,
+                ))
             except (TypeError, ValueError, KeyError, AttributeError) as exc:
                 status["interpretation_error"] = str(exc)
+            if isinstance(status.get("connected_cabinets"), int):
+                self._max_connected = max(self._max_connected or 0, status["connected_cabinets"])
+            self._carrying_outputs |= set(status.get("carrying_outputs") or [])
         return status
 
     # --- control ------------------------------------------------------------

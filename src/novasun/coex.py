@@ -12,14 +12,23 @@ raises :class:`CoexError`. A zero ``code`` on a PUT does not show that anything
 changed: on an MX30 a PUT whose body key the firmware ignored still answered
 Success (OBSERVED once, see :meth:`CoexClient.set_snmp`), so read a setting back
 after writing it.
+
+**Secrets are removed at this boundary.** An MX30 (firmware V1.5.1, 2026-09-26)
+served ``data.randomPassword`` -- an 8-digit string whose purpose is UNKNOWN --
+to a bare, unauthenticated ``GET /api/v1/device/hw`` (OBSERVED). Every response
+passes through :func:`redact_secrets` inside :meth:`CoexClient.request`, so no
+caller -- monitor, survey, snapshot, identify -- ever holds the value to log,
+store, display or serialise.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 DEFAULT_PORT = 8001
@@ -35,14 +44,60 @@ ERROR_CODES = {
 }
 
 
+class IgnoredWrite(Exception):
+    """A write this client refuses to send because hardware was seen to ignore it."""
+
+
 class CoexError(Exception):
     def __init__(self, code: int, message: str) -> None:
         super().__init__(f"{ERROR_CODES.get(code, 'Error')} ({code}): {message}")
         self.code = code
 
 
+#: Response keys that are never passed on, matched case-insensitively anywhere
+#: in the name. ``randomPassword`` is the one that has been seen with a value
+#: (OBSERVED: ``GET /api/v1/device/hw`` on one MX30, V1.5.1, 2026-09-26, the
+#: same 8 digits on four reads, served with no credential of any kind).
+#: ``GET /api/v1/device/cloud/status`` carried ``password`` too, empty on that
+#: unit. Nothing a monitor shows needs any of them, so the match is broad.
+SECRET_KEY_PATTERN = re.compile(r"passw(or)?d", re.IGNORECASE)
+
+
+def redact_secrets(value: Any) -> Any:
+    """``value`` with every secret-named key removed, at any depth.
+
+    Keys matching :data:`SECRET_KEY_PATTERN` are dropped -- not masked -- so a
+    later ``json.dumps`` or log line cannot carry them. Dicts and lists are
+    rebuilt, so the input is never mutated; anything else is returned as is.
+    """
+    if isinstance(value, dict):
+        return {
+            key: redact_secrets(item)
+            for key, item in value.items()
+            if not (isinstance(key, str) and SECRET_KEY_PATTERN.search(key))
+        }
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    return value
+
+
 @dataclass
 class CoexClient:
+    """The COEX HTTP API on port 8001: reads and writes.
+
+    **There is deliberately no method that PUTs ``/api/v1/device/hw/lock``, and
+    none may be added.** On one MX30 (firmware V1.5.1, 2026-09-26) VMP took
+    that lock with ``PUT /api/v1/device/hw/lock {"appids": [...]}`` a few
+    seconds after it opened; the unit pushed ``deviceLockChange {locked: 1,
+    ip}`` to websocket subscribers, and the lock outlived the HTTP connection
+    that took it, with no unlock seen while VMP ran (all OBSERVED). It read
+    unlocked again after VMP quit (operator-reported; the release mechanism
+    is UNKNOWN). **The lock is what a VMP session holds.** Taking
+    it -- or releasing it -- from here would contend with the operator's own
+    control session on a live show, and what else it blocks is UNKNOWN. Read
+    it with :meth:`lock_state`; never write it.
+    """
+
     host: str
     port: int = DEFAULT_PORT
     timeout: float = 5.0
@@ -61,7 +116,7 @@ class CoexClient:
             headers={"Content-Type": "application/json"} if payload else {},
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            parsed = json.loads(response.read() or b"{}")
+            parsed = redact_secrets(json.loads(response.read() or b"{}"))
         if isinstance(parsed, dict) and "code" in parsed:
             if parsed["code"] != 0:
                 raise CoexError(parsed["code"], parsed.get("message", ""))
@@ -88,30 +143,106 @@ class CoexClient:
     def monitoring(self) -> Any:
         return self.request("GET", "/api/v1/device/monitor/info")
 
+    def display_state(self) -> Any:
+        """``GET /api/v1/screen/output/display/state`` -- display mode per canvas.
+
+        Shape (OBSERVED, one MX30, firmware V1.5.1, 2026-09-26)::
+
+            {"mappingState": [{"canvasID": 2048, "enable": false}],
+             "displayState": [{"canvasID": 2048, "displayMode": 0}]}
+
+        ``displayMode`` read 2 for the whole of an attended front-panel freeze
+        and 0 before and after it, polled once a second (OBSERVED); the unit's
+        websocket pushed the same values at that freeze and, in a capture of
+        VMP, at an earlier one. So 0 = normal
+        and 2 = freeze are OBSERVED on that unit, and 1 = blackout too: it read
+        1 through an attended front-panel blackout the same evening (OBSERVED
+        once; the documented COEX enum said so first). What
+        ``mappingState.enable`` means is UNKNOWN. Whether the MX40 Pro serves
+        this path is UNKNOWN: it was never requested there.
+
+        This, not :meth:`display_status`, is the endpoint that shows display
+        state; the first attended freeze sweep missed it. Interpret it with
+        :func:`novasun.monitor.interpret_display_state`, which treats an
+        absent answer or an unrecognised value as unknown, never normal.
+        """
+        return self.request("GET", "/api/v1/screen/output/display/state")
+
+    def hardware_info(self) -> Any:
+        """``GET /api/v1/device/hw`` -- identity, versions and capabilities.
+
+        OBSERVED on one MX30 (firmware V1.5.1, 2026-09-26), about 5.7 KB:
+        ``name`` "MX30" and ``modelID`` 5138 in the same object, ``sn``,
+        ``mac``, ``hwVersion`` "V1.5.1" (the string SNMP reported as firmware
+        and ``/device/firmware/list`` as ``deviceVersion``), ``customName``
+        (the controller's name -- the same label as ``monitor/info``'s
+        ``name``, REASONED), ``capability{}`` and more. That ``name`` is the
+        model rather than a label is REASONED from that one read, in which
+        ``customName`` held the controller's name; which version string is
+        "the firmware" is REASONED. Never requested on an MX40 Pro, so whether that
+        firmware serves it is UNKNOWN.
+
+        **The same response carried ``randomPassword``** (OBSERVED), served to
+        an unauthenticated GET. It is removed before this returns -- by
+        :func:`redact_secrets` in :meth:`request`, which every response passes
+        through -- so it cannot reach a snapshot, a log or ``survey --json``.
+        """
+        return self.request("GET", "/api/v1/device/hw")
+
+    def lock_state(self) -> Any:
+        """``GET /api/v1/device/hw/lock`` -- whether a control application holds the unit.
+
+        OBSERVED on one MX30 (firmware V1.5.1, 2026-09-26), before VMP took the
+        lock: ``{"locked": 0, "ip": ""}``, twice. Once VMP had taken it, the
+        websocket pushed ``deviceLockChange {"locked": 1, "ip": <VMP's host>}``
+        (OBSERVED); a GET while locked was not captured, so that it then reads
+        ``locked: 1`` with the holder's IP is REASONED. The lock did not stop
+        a front-panel freeze (OBSERVED); whether it blocks other API clients is
+        UNKNOWN. A read -- see the class docstring for why the matching PUT is
+        not, and must not be, offered here.
+        """
+        return self.request("GET", "/api/v1/device/hw/lock")
+
     # --- writes -------------------------------------------------------------
     #
-    # Only two of these have met hardware: set_snmp and identify_controller, on
-    # one MX30 (firmware V1.5.1, 2026-09-26). set_snmp's {"value": ...} body
-    # turned out to be silently ignored there while the firmware answered
-    # Success. REASONED, untested: any other setter whose body follows the same
-    # {"value": ...} convention -- set_automatic_time, set_controller_name,
-    # set_system_time, set_timezone and the rest -- may be wrong the same way.
-    # None has been sent to a controller; read the setting back after any of
-    # them rather than trusting the envelope.
+    # Only three of these have a body shape settled by hardware, all on one
+    # MX30 (firmware V1.5.1, 2026-09-26): set_snmp and identify_controller,
+    # which novasun sent, and set_system_time, whose body is the one VMP was
+    # captured sending (novasun has never sent it). set_snmp's old
+    # {"value": ...} body turned out to be silently ignored while the firmware
+    # answered Success; set_system_time's old {"value": iso} body did not match
+    # what VMP sends either. REASONED, untested: any other setter whose body
+    # follows the same {"value": ...} convention -- set_automatic_time,
+    # set_controller_name, set_timezone and the rest -- may be wrong the same
+    # way. None of those has been sent to a controller; read the setting back
+    # after any of them rather than trusting the envelope.
 
     def set_display_mode(self, mode: int) -> None:
         """0 normal, 1 blackout, 2 freeze."""
         self.request("PUT", "/api/v1/device/screen/displaymode", {"value": mode})
 
     def set_cabinet_brightness(self, cabinet_ids: list[int], ratio: float, nit: int | None = None) -> None:
+        """``ratio`` is a 0-1 fraction. On an MX30 (V1.5.1, 2026-09-26) this body,
+        with every cabinet id and no ``nit``, worked: ``/device/cabinet`` read the
+        value back within 1 s (OBSERVED twice, attended)."""
         body: dict[str, Any] = {"idList": cabinet_ids, "ratio": ratio}
         if nit is not None:
             body["nit"] = nit
         self.request("PUT", "/api/v1/device/cabinet/brightness", body)
 
     def set_screen_brightness(self, screen_ids: list[str], ratio: float) -> None:
-        self.request(
-            "PUT", "/api/v1/screen/brightness", {"idList": screen_ids, "ratio": ratio}
+        """**A silent no-op on an MX30** (V1.5.1, 2026-09-26): this body answered
+        a Success envelope and changed nothing, and the unit pushed
+        ``screenBrightnessChange {screenIdList: null, brightness: 0}`` (OBSERVED
+        once, attended). The right body is UNKNOWN; use
+        :meth:`set_cabinet_brightness` and read back.
+
+        So this refuses rather than send a write the controller reports as done
+        and ignores. It sends nothing."""
+        raise IgnoredWrite(
+            "PUT /api/v1/screen/brightness with {idList, ratio} is ignored by an MX30 "
+            "(answered Success, changed nothing; OBSERVED 2026-09-26). Use "
+            "set_cabinet_brightness with the screen's cabinet ids."
         )
 
     def select_input(self, source_id: int) -> None:
@@ -156,6 +287,11 @@ class CoexClient:
         return self.request("GET", "/api/v1/screen/displayeffect")
 
     def display_status(self) -> Any:
+        """The documented display-mode GET -- absent on both units read.
+
+        OBSERVED: HTTP 404 on an MX40 Pro (2026-09-11) and an empty 200 on an
+        MX30 (2026-09-26). Use :meth:`display_state`, which the MX30 serves.
+        """
         return self.request("GET", "/api/v1/device/screen/displaymode")
 
     def set_screen_gamma(self, screen_ids: list[str], gamma: float) -> None:
@@ -368,8 +504,56 @@ class CoexClient:
     def set_controller_name(self, name: str) -> None:
         self.request("PUT", "/api/v1/device/hw/customname", {"value": name})
 
-    def set_system_time(self, iso_timestamp: str) -> None:
-        self.request("PUT", "/api/v1/device/hw/systemtime", {"value": iso_timestamp})
+    def set_system_time(self, when: datetime | str, client_timezone: str) -> None:
+        """Set the controller's clock -- a write.
+
+        Sends the body VMP was captured sending when it opened (OBSERVED, one
+        MX30, firmware V1.5.1, 2026-09-26; the unit answered
+        ``{"code":0,"data":null,"message":"Success"}``)::
+
+            {"clientTimezone": "<IANA zone name>", "second": 54, "minute": 1,
+             "hour": 18, "isUTC": true, "day": 26, "month": 9, "year": 2026}
+
+        VMP sent hour 18 at 19:01 local time (UTC+1) with ``isUTC`` true, so
+        the fields are UTC components (OBSERVED values); that the firmware
+        reads them as UTC *because* of ``isUTC`` is REASONED. VMP sent its
+        host's own zone as ``clientTimezone``; what the unit does with it is
+        UNKNOWN. A GET made before the PUT read an empty ``clientTimezone``,
+        ``isUTC`` false and local-time fields (OBSERVED); none was made after
+        it. Whether the clock actually moved is UNKNOWN: the unit's HTTP
+        ``Date`` header lagged by about the same before and after (weak
+        evidence it did not).
+
+        This method used to send ``{"value": iso}``, which is not what the
+        firmware was seen to accept; by analogy with the snmpstate finding it
+        was most likely a Success-answering no-op (REASONED). **novasun has
+        never sent either body to a controller.** Read the time back after
+        writing, and do not wire this anywhere new: merely opening VMP already
+        sends this write (OBSERVED once).
+
+        ``when`` must be timezone-aware (a :class:`~datetime.datetime` or an
+        ISO 8601 string with an offset); a naive time is ambiguous and refused.
+        """
+        moment = datetime.fromisoformat(when) if isinstance(when, str) else when
+        if moment.tzinfo is None or moment.utcoffset() is None:
+            raise ValueError(
+                "set_system_time needs a timezone-aware time; a naive one is ambiguous"
+            )
+        utc = moment.astimezone(timezone.utc)
+        self.request(
+            "PUT",
+            "/api/v1/device/hw/systemtime",
+            {
+                "clientTimezone": client_timezone,
+                "second": utc.second,
+                "minute": utc.minute,
+                "hour": utc.hour,
+                "isUTC": True,
+                "day": utc.day,
+                "month": utc.month,
+                "year": utc.year,
+            },
+        )
 
     def set_automatic_time(self, enabled: bool) -> None:
         self.request("PUT", "/api/v1/device/time/enable", {"value": bool(enabled)})

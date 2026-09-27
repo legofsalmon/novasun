@@ -44,16 +44,23 @@ own stated checksums; both are source errors and are documented as such in
 ## Hardware
 
 Everything above is documentary. Three units have now been seen — one on a
-bench, two on live-show networks, one of those twice:
+bench and two on live-show networks. The MX30 has ten rows, all on one day;
+the last four are one continuous attended stretch, 18:51Z–19:18Z:
 
 | Unit | Identified as | Available since |
 |---|---|---|
 | NovaPro UHD Jr | model ID `0x6205`, serial `16:04:11:00:c1:c9:2d:00`, discovery tail `App,0161` | 2026-08-26 |
 | MX40 Pro (COEX) | reports itself as `MX40 Pro_<digits>`; MAC `54:b5:6c:27:9d:fb` (NovaStar OUI) — on a live-show network with VMP operating it. **Three read-only bursts of eight HTTP GETs** (two mid-show, one five hours later), a few extra GETs, eight unanswered discovery probes and six unanswered SNMP GETs were sent to it, plus a ten-minute 1 Hz read-only poll after the show (1,791 GETs, three endpoints); nothing else. SNMP off; 288 cabinets on 6 outputs. **Firmware UNKNOWN** — never read, never recorded | 2026-09-11 |
-| MX30 (COEX) | identified by a MAC in the NovaStar OUI and by the operator, who also reported the **firmware as v1.5.1**. Nothing read over HTTP carries the controller's model or firmware, so during the read-only pass both were operator-reported; **both were then read over SNMP — `CONTROLLER_MODEL` `"MX30"`, `CONTROLLER_FIRMWARE` `"V1.5.1"` (OBSERVED, next row)**, confirming the report. `monitor/info.name` is a plain word, not `MX30_<digits>` (that it is an operator-set label is REASONED). Read-only pass, unattended after a show, wall still lit, VMP attachment UNKNOWN (14:44Z–14:57Z): **two pings and about 950 HTTP GETs** (two eight-endpoint snapshots seven minutes apart, ten further GETs, six `curl -i`, a 300-tick 1 Hz poll of three endpoints = 900, and ~24 from `survey`/`watch`/`identify` whose outcomes were not kept), two unanswered SNMP GETs and eight unanswered discovery probes; in that pass nothing else — no TCP 5200, no PUT. SNMP off as found; 72 cabinets on 3 outputs | 2026-09-26 |
-| MX30, second session | the same unit, **VMP closed by the operator**, who authorised writes, SNMP and the register bus explicitly (16:50Z–16:55Z). Sent: **2 `PUT hw/colorBeacon`** (`{"value": true}`, then `false` 5 s later) and **5 `PUT snmpstate`** (`{"value": true}`, then `{"state": ...}` true/false twice) — the only writes, ever, to COEX hardware from this project; 32 snapshot GETs through the read-only client and seven `GET snmpstate`; SNMP v2c, community `public` only — walks of `1.3.6.1.2.1.1` (v2c and v1) and of `1.3.6.1.4.1.319` (v2c), and `sysDescr` GETs, each request with one retry; **one TCP connect to 5200** with evidence and a second in the operator's log only, both refused; **one 20-byte read frame to UDP 5201**. SNMP left off (GET false; `snmpget` timed out) | 2026-09-26 |
+| MX30 (COEX) | identified by a MAC in the NovaStar OUI and by the operator, who also reported the **firmware as v1.5.1**. Nothing read over HTTP in that pass carried the controller's model or firmware (`/api/v1/device/hw`, first read that evening, does — below), so during the read-only pass both were operator-reported; **both were then read over SNMP — `CONTROLLER_MODEL` `"MX30"`, `CONTROLLER_FIRMWARE` `"V1.5.1"` (OBSERVED, next row)**, confirming the report. `monitor/info.name` is a plain word, not `MX30_<digits>` (that it is an operator-set label is REASONED). Read-only pass, unattended after a show, wall still lit, VMP attachment UNKNOWN (14:44Z–14:57Z): **two pings and about 950 HTTP GETs** (two eight-endpoint snapshots seven minutes apart, ten further GETs, six `curl -i`, a 300-tick 1 Hz poll of three endpoints = 900, and ~24 from `survey`/`watch`/`identify` whose outcomes were not kept), two unanswered SNMP GETs and eight unanswered discovery probes; in that pass nothing else — no TCP 5200, no PUT. SNMP off as found; 72 cabinets on 3 outputs | 2026-09-26 |
+| MX30, second session | the same unit, **VMP closed by the operator**, who authorised writes, SNMP and the register bus explicitly (16:50Z–16:55Z). Sent: **2 `PUT hw/colorBeacon`** (`{"value": true}`, then `false` 5 s later) and **5 `PUT snmpstate`** (`{"value": true}`, then `{"state": ...}` true/false twice) — the first writes to COEX hardware from this project; 32 snapshot GETs through the read-only client and seven `GET snmpstate`; SNMP v2c, community `public` only — walks of `1.3.6.1.2.1.1` (v2c and v1) and of `1.3.6.1.4.1.319` (v2c), and `sysDescr` GETs, each request with one retry; **one TCP connect to 5200** with evidence and a second in the operator's log only, both refused; **one 20-byte read frame to UDP 5201**. SNMP left off (GET false; `snmpget` timed out) | 2026-09-26 |
 | MX30, attended | the same unit, **operator at the wall watching the chassis** (front panel, LCD, status LEDs), 17:43:24Z–17:44:24Z. Sent: **9 `PUT hw/colorBeacon`** — `{"value"}`, `{"state"}` and `{"enable"}` each held true for 10 s, then false with all three bodies. Every reply the empty 200; **nothing visible changed in any window** (OBSERVED), so the endpoint is most likely absent on this firmware (REASONED). Nothing else sent | 2026-09-26 |
-| MX30, attended freeze | the same unit, **operator at the wall**, 17:49:58Z–17:54Z; the operator froze the wall from the front panel at about 17:50:30Z and unfroze it at about 17:51:00Z. Sent: **2 `PUT snmpstate`** (`{"state": true}` at the start, `false` at the end) and read-only GETs once a second across seven endpoints, the cabinet list every five seconds, SNMP v2c walks of the screen arc each second and of the enterprise arc every five. **Nothing moved at the freeze or the unfreeze** on HTTP or SNMP (OBSERVED): display state is not observable on this firmware. Blackout not tried | 2026-09-26 |
+| MX30, attended freeze | the same unit, **operator at the wall**, 17:49:58Z–17:54Z; the operator froze the wall from the front panel at about 17:50:30Z and unfroze it at about 17:51:00Z. Sent: **2 `PUT snmpstate`** (`{"state": true}` at the start, `false` at the end) and read-only GETs once a second across seven endpoints, the cabinet list every five seconds, SNMP v2c walks of the screen arc each second and of the enterprise arc every five. **Nothing that was polled moved at the freeze or the unfreeze**, on HTTP or SNMP (OBSERVED). It was recorded as "display state is not observable on this firmware"; **that conclusion is withdrawn** — the sweep never polled `/api/v1/screen/output/display/state`, which shows a freeze (two rows down). Blackout not tried | 2026-09-26 |
+| MX30, VMP capture | the same unit, **VMP opened and operated by the operator**, packet capture on the VMP host, 18:01:18Z–18:07:10Z. **Sent by this project: one 20-byte register-bus read frame to UDP 5201** (18:01:28Z, before VMP connected), answered by ICMP port-unreachable — nothing else. **Sent by VMP**: 218 GETs over 90 paths in 0.65 s (the first `GET discovery?vendorName=coex`), four PUTs (`hw/systemtime`, `device/picture` twice, `hw/lock`), one websocket held to quit, one 8082 preview stream (~51 Mbit/s). The operator froze the wall from the front panel while VMP was attached. The raw capture is deleted; only masked notes taken from it remain, outside this repository | 2026-09-26 |
+| MX30, attended display-state test | the same unit, **VMP closed, operator at the wall**, 18:46:41Z–18:47:40Z. Sent: `GET /api/v1/screen/output/display/state` once a second (60 GETs) and one websocket — the upgrade, 59 empty pongs, a close frame; no hello text, no PUT, no lock. The operator froze the wall from the front panel and unfroze it about 22 s later. **`displayMode` read 2 through the freeze and 0 either side** (OBSERVED) | 2026-09-26 |
+| MX30, attended brightness | the same unit, **VMP closed, operator at the wall**, 18:51Z–18:55Z. Sent: **3 PUTs**, the only writes in this stretch — two `PUT /api/v1/device/cabinet/brightness` `{"idList": [all 72 cabinet ids], "ratio": r}` and one `PUT /api/v1/screen/brightness` `{"idList": [<screenID>], "ratio": 0.45}`, `CoexClient.set_screen_brightness`'s body — plus read-back GETs of `/device/cabinet`, a websocket (upgrade and pongs, no hello) and, through the knob turn, a `display/state` GET at 1 Hz. **The first write took the wall brighter, from 20 % to 45 %, when the test had been announced as dimming it:** it sent an absolute target, 0.45, and the wall was at 0.2, not the 0.5 read at 14:44Z. The second, 10 s later (18:51:46Z), put it back to 0.2. Brightness tests now step relative to a fresh read. Settled (OBSERVED): the cabinet PUT works and reads back within 1 s, pushed as `ScreensCabinetsDisplayChange` ~55 ms later; the screen PUT answers Success and changes nothing (pushing `screenBrightnessChange {screenIdList: null, brightness: 0}`); brightness is a 0–1 fraction (a front-panel knob turn 20 → 60 → 20 % at 18:54:27Z–18:54:48Z, watched read-only, pushed a peak of 0.600 in 72 `screenBrightnessChange` events); every write, ours or the front panel's, is preceded by a `deviceLastOperatorChange` naming the writer; brightness does not move `display/state`. Left at brightness 0.2, display mode 0, SNMP off, lock free (read back 18:52Z) | 2026-09-26 |
+| MX30, attended blackout | the same unit, **VMP closed, operator at the wall**, who blacked it out from the front panel at 18:57:07Z for ~10 s. Sent: only a `display/state` GET at 1 Hz and a websocket's upgrade and pongs, no hello — no PUT, nothing on UDP. Settled: **`displayMode` 1 = blackout** (OBSERVED once), on the GET within the poll interval (18:57:07.893Z) and on the websocket at once (`canvasDisplayModeChange` `value` 1 at 18:57:07.054Z, 0 at 18:57:17.219Z). With the freezes, 0 normal, 1 blackout, 2 freeze is OBSERVED on this unit | 2026-09-26 |
+| MX30, attended unplug | the same unit, **VMP closed, powered throughout**; the operator unplugged every output data line one at a time, 18:59:52Z–19:02:29Z. **Sent: only GETs** (`monitor/info` every 2 s among them, the websocket upgrade, and `screen/cabinet/count` and `/device/cabinet` once at about 19:03Z) **and websocket pongs; nothing on UDP** — the UDP 54622 socket was receive-only. Settled (OBSERVED): **`monitor/info` gives a false all-clear** — 72 cabinets and cards, links up, 39–42 °C, with nothing connected, until power-off, only `rvCardsRuntime` emptying; `screen/cabinet/count` and `/device/cabinet` went to 0; `outputStatus[].linkStatus` dropped per output within a 2 s poll; `ScreensCabinetsCountChange` pushed every stage (72 → 48 → 46 → 45 → 36 → 24 → 0), with `outputPortLinkChange`, `alarmCountChange` and `loopDetectStatusList`; 2049 and 2051 are backup ports; the announcements continued every 3 s | 2026-09-26 |
+| MX30, front-panel power-off | the same unit, all outputs already unplugged; the operator switched it off at the **front-panel power button**, not the mains (operator-reported), at 19:10:56Z, and the watchers ran on to 19:18:42Z. **Sent: only GETs** (`display/state` and `monitor/info` polls, refused after 19:10:56Z) **and websocket pongs** (until the websocket ended); **nothing on UDP**. Settled (OBSERVED): the announcements stopped at once (last 19:10:55.824Z); the websocket ended at 19:10:56.265Z; HTTP answered **connection refused**, never a timeout, from 19:10:56.6Z for all 7.5 minutes watched; `monitor/info` still listed 72 linked cabinets at every poll up to power-off. The front-panel "off" is a standby with the network stack up (REASONED) | 2026-09-26 |
 
 Driving 30 receiving cards (model `0x4506`, firmware `4.3.0.0`) across output
 ports 0, 1, 2 and 4. Findings from it are marked **OBSERVED** and were
@@ -97,17 +104,21 @@ that runtimes step in 60 s on a second unit; and that a 1 Hz poll of three
 endpoints at 72 cabinets costs nothing visible (900 requests, p50 10.5 ms, no
 drift, no error). Its SNMP was off too and it left eight discovery probes
 unanswered, so at the end of that pass the OID map was still unexercised, and
-discovery stays unanswered on every COEX unit met.
+discovery stays unanswered on every COEX unit met — to the probe; the MX30
+announces itself instead (below).
 
 What the read-only pass could not settle: **the controller's model or firmware
-over HTTP** — no field read carries either, and the one model-like number that
-recurs across payloads (`modelId`) identifies UNKNOWN what, so at the end of
-that pass both facts rested on the operator (SNMP settled both later, below);
+over HTTP** — no field read in it carries either, and the one model-like
+number that recurs across payloads (`modelId` 5138) identified UNKNOWN what
+(`/api/v1/device/hw` later settled it as the MX30's model ID), so at the end of
+that pass both facts rested on the operator (SNMP settled both later, and
+`/api/v1/device/hw` that evening, below);
 whether the five empty-200 endpoints are absent or present-but-empty; whether
 the name is operator-set (REASONED from the OFFICIAL `customname` setter, not
 read back); whether anything on that segment broadcasts, because the
-**packet-level positive control for the passive listener is still unrun**
-(tcpdump needs root on the observing host, which was also multi-homed); and
+**packet-level positive control for the passive listener was unrun** (tcpdump
+needs root on the observing host, which was also multi-homed; the VMP capture
+later ran it — the MX30's own broadcasts reached the capturing host); and
 whether VMP was attached during the session. The raw payloads carry show data —
 a chosen name, screen and preset names, UUIDs, cabinet ids — and are not
 retained in the repository; their structure, with synthetic values, is
@@ -117,8 +128,8 @@ The second MX30 session settled (all OBSERVED on that one unit, V1.5.1, VMP
 closed, unless labelled):
 
 - **Model and firmware**, read over SNMP for the first time: `"MX30"` and
-  `"V1.5.1"` — the operator's report confirmed. Of the surfaces seen, SNMP is
-  the only one that gives either.
+  `"V1.5.1"` — the operator's report confirmed. At the time SNMP was the only
+  surface seen that gave either; `/api/v1/device/hw` later gave both over HTTP.
 - **How to enable SNMP.** `PUT snmpstate` with `{"state": true}` works and
   reads back; `{"value": true}` answers a Success envelope and changes nothing
   (once) — which is what `CoexClient.set_snmp` sent at the time. A Success on
@@ -135,13 +146,124 @@ closed, unless labelled):
 - **TCP 5200 refused a connection** at that moment (REASONED: no listener).
 
 What it did not settle: whether UDP 5201 listens (one silent frame, no
-capture); whether Ethernet central control is a setting, off by default, or
+capture; a later frame drew ICMP port-unreachable, below); whether Ethernet central control is a setting, off by default, or
 opened while VMP runs; other SNMP communities, v1
 against the enterprise arc, other MIB-2 groups, and traps; the wire encoding
 of the Counter64 values; the meaning of `CONTROLLER_ROLE` 1 and of every
 undocumented subtree; and whether switching SNMP had side effects — the
 snapshot diffs that suggested none (REASONED) held show data and were not
 kept.
+
+The attended freeze session settled that nothing it polled — seven HTTP
+endpoints, the cabinet list, SNMP's screen and enterprise arcs — moves at a
+front-panel freeze (OBSERVED). It was written up as settling more than that,
+"display state is not observable on this firmware", and that part is
+withdrawn: it never polled the endpoint that shows display state.
+
+The VMP capture settled (OBSERVED on that one unit, IPv4 only, unless
+labelled):
+
+- **The MX30 announces itself**, unsolicited, every 3.0 s on UDP 54622, 54623,
+  54624 and 54700 from port 54650: 96 bytes of JSON carrying its MAC, API port
+  and HTTPS port, no model or name, unchanged across VMP's lock and a freeze.
+  The earlier "no announcement" results were on UDP 3800 only; they stand,
+  re-scoped to it. A receive-only listener on these ports is passive discovery
+  for this unit (REASONED).
+- **The broadcast positive control** for that segment: the announcements
+  reached the capturing host.
+- **VMP sent no discovery probe** (nothing on UDP 3800, 5353 or 1900, no
+  multicast) and connected to the announced API port 5 ms after an
+  announcement (that it used the announcement is REASONED).
+- **Identity over HTTP**: `GET /api/v1/device/hw` gives `name` "MX30",
+  `modelID` 5138, `hwVersion` "V1.5.1", `sn` and `mac`, overturning "not
+  readable over HTTP"; `modelID` 5138 is the MX30's. It also serves a
+  `randomPassword` field to an unauthenticated GET, purpose UNKNOWN.
+- **What VMP writes when it opens**: `hw/systemtime` (a write to the
+  controller clock and zone; whether it takes effect is UNKNOWN), `device/picture {"type": 0}` twice (preview control,
+  REASONED) and `hw/lock`. **The lock** reads back over GET, is pushed as
+  `deviceLockChange`, outlived its HTTP connection and did not stop a
+  front-panel freeze (the last REASONED).
+- **The websocket** `/api/v1/websocketchannel`: its handshake, 1 Hz pings and
+  event catalogue, including `canvasDisplayModeChange` value 2 at a freeze and
+  0 at its release, each ~100 ms after an operator event naming the front
+  panel.
+- **The 8082 preview**: a multipart JPEG stream of the inputs at ~51 Mbit/s,
+  which does not show a freeze (REASONED).
+- **UDP 5201 was not listening** at 18:01:28Z (ICMP port-unreachable; VMP not
+  yet connected).
+- `X-Request-Id` is a request counter across clients; six more paths give the
+  empty 200.
+
+It also recorded, from the capturing host, a poller aimed at a
+non-processor address on the segment every 20 s whose SNMP OIDs, order and timing match crewbox's video
+watcher (REASONED; recorded as handoff evidence in
+[`read-only-monitoring.md`](read-only-monitoring.md#handoff-evidence-for-crewbox-2026-09-26)).
+Nothing of that kind reached the MX30.
+
+What it did not settle: whether the MX40 Pro announces; which announcement
+port VMP binds, and why there are four; what `authType`, `workMode`,
+`/device/picture`'s `type` and `randomPassword` mean; how the lock is released
+and whether it blocks other clients; whether subscribing to the websocket has
+side effects; and anything on IPv6 — the capture held no IPv6 frames, so its
+negatives ("no mDNS", "no probe") cover IPv4 only. The capture's clock
+appears to have stepped by about 68 ms after the freeze (REASONED); freeze
+timings are unaffected. The raw
+capture also held unrelated cleartext credentials belonging to other equipment
+on the network, so it and every cache derived from it were deleted, and
+nothing from it enters this repository except masked, synthetic-valued
+findings; the capture rule that follows is in
+[`capture-workflow.md`](capture-workflow.md#filter-on-the-controller-never-on-your-own-host).
+
+The attended display-state test settled that **`GET
+/api/v1/screen/output/display/state` shows a front-panel freeze**:
+`displayState[].displayMode` read 2 through a 22 s freeze and 0 before and
+after, per `canvasID` (OBSERVED). With the capture's websocket events, 2 =
+freeze is OBSERVED on this unit at two freezes; 1 = blackout was left
+REASONED from the documented enum, and the next session settled it. It also
+settled that the websocket pushes without VMP's hello text, and that a 1 Hz
+poll sees a change within its interval (the push arrived ~0.5 s earlier). It
+did not settle whether `hwinfo`'s `displayMode` tracks a freeze, or anything
+about the MX40 Pro.
+
+The brightness, blackout, unplug and power-off tests (four rows, one
+continuous attended stretch, VMP closed) settled (OBSERVED on that one unit):
+
+- **1 = blackout**: `displayMode` 1 through a ~10 s front-panel blackout, on
+  the GET and the websocket, 0 either side. With the freezes, the map 0
+  normal, 1 blackout, 2 freeze is OBSERVED.
+- **`monitor/info` is not a presence signal**: with every output line
+  unplugged it kept 72 cabinets and cards, links up and temperatures reading,
+  until power-off ~8.5 minutes later; only `rvCardsRuntime` emptied. The
+  earlier "present with a reporting card = online" (REASONED) is withdrawn.
+  `screen/cabinet/count` and `/device/cabinet` went to 0, and
+  `outputStatus[].linkStatus` went false per output within a 2 s poll.
+- **2049 and 2051 are backup ports** (`backupState` true in the unit's own
+  `outputPortLinkChange`).
+- **Power-off from the front-panel button**: announcements stopped at once,
+  the websocket ended, and HTTP answered connection refused within about a
+  second — and kept refusing, never timing out, for the 7.5 minutes watched.
+  The front-panel "off" is a standby with the network stack up (REASONED;
+  operator-reported that the button, not the mains, was used).
+- **Brightness** is a 0–1 fraction, readable per cabinet and pushed on change;
+  `PUT /api/v1/device/cabinet/brightness` works and
+  `PUT /api/v1/screen/brightness` with `CoexClient`'s body is a
+  Success-answering no-op. Every write is preceded by a
+  `deviceLastOperatorChange` naming the writer. The first cabinet write made
+  the wall brighter, 20 % to 45 %, for ~9 s when a dim had been announced,
+  because it set an absolute target (0.45) and the wall was at 0.2, not the
+  0.5 read that afternoon. That was a test error, recorded so it is not
+  repeated: step relative to a fresh read.
+
+What was sent: three brightness PUTs at about 18:51Z, the only writes; after
+them, through the blackout, the unplugging and the power-off, only GETs and
+websocket pongs, and nothing at all on UDP.
+
+It did not settle how long `monitor/info` keeps stale cabinets (it had not
+cleared in ~8.5 minutes), whether the MX40 Pro behaves the same, the right
+body for screen brightness, whether SNMP's `RECEIVING_CARDS_ONLINE` tracks an
+unplugged line (SNMP was off throughout), or what a mains cut or a pulled
+controller cable looks like (REASONED: timeouts with no ARP reply; never
+tried).
 
 Register addresses still marked `derived` in
 [`../src/novasun/registers.py`](../src/novasun/registers.py) come from decompiled

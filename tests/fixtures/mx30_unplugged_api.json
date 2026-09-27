@@ -14,239 +14,7 @@
   "master": "",
   "masterName": ""
  },
- "/api/v1/device/cabinet": [
-  {
-   "angle": 0,
-   "brightness": 0.5,
-   "bunchesIndex": 0,
-   "cabType": "",
-   "cabinetFileParam": {
-    "cabinetName": "",
-    "cardModel": "",
-    "issue": 0,
-    "manufactureName": "",
-    "status": "unknown",
-    "version": "0.0.0.0"
-   },
-   "canvasID": 2048,
-   "clientOrderNo": "",
-   "colorTemperature": 6500,
-   "customGamma": false,
-   "familyName": "",
-   "gain": {
-    "b": 43,
-    "g": 43,
-    "r": 43
-   },
-   "gamma": {
-    "b": 2.8,
-    "g": 2.8,
-    "r": 2.8
-   },
-   "id": 400000000000001,
-   "index": 0,
-   "indicatorLightState": true,
-   "manufacture": "",
-   "moduleCount": 4,
-   "moduleSize": {
-    "moduleCol": 255,
-    "moduleRow": 255,
-    "overwrite": false
-   },
-   "ncpFileName": "",
-   "ncpVersion": "0.0.0.0",
-   "outputCardID": 8,
-   "outputID": 2048,
-   "outputIndex": 0,
-   "pointSpacing": "0.000",
-   "power": 0,
-   "resolution": {
-    "height": 128,
-    "width": 128
-   },
-   "rvCardInfo": {
-    "chipEffectFlag": 0,
-    "decodeIc": "",
-    "driverChip": "",
-    "firmware": "4.6.6.68",
-    "firmwareRemark": "",
-    "grayScale": 14,
-    "maxGamma": 9856,
-    "mcuFirmWare": "4.6.6.68",
-    "mcuFirmWareRemark": "",
-    "moduleResolution": {
-     "height": 64,
-     "width": 64
-    },
-    "refreshRate": 3850,
-    "scanNumber": 16
-   },
-   "rvCardName": "A5sPlus",
-   "shortName": "",
-   "size": {
-    "height": 0,
-    "width": 0
-   },
-   "supportType": 0,
-   "voltage": 34,
-   "vsFreMax": 0,
-   "weight": 0
-  },
-  {
-   "angle": 0,
-   "brightness": 0.5,
-   "bunchesIndex": 0,
-   "cabType": "",
-   "cabinetFileParam": {
-    "cabinetName": "",
-    "cardModel": "",
-    "issue": 0,
-    "manufactureName": "",
-    "status": "unknown",
-    "version": "0.0.0.0"
-   },
-   "canvasID": 2048,
-   "clientOrderNo": "",
-   "colorTemperature": 6500,
-   "customGamma": false,
-   "familyName": "",
-   "gain": {
-    "b": 43,
-    "g": 43,
-    "r": 43
-   },
-   "gamma": {
-    "b": 2.8,
-    "g": 2.8,
-    "r": 2.8
-   },
-   "id": 400000000000002,
-   "index": 0,
-   "indicatorLightState": true,
-   "manufacture": "",
-   "moduleCount": 4,
-   "moduleSize": {
-    "moduleCol": 255,
-    "moduleRow": 255,
-    "overwrite": false
-   },
-   "ncpFileName": "",
-   "ncpVersion": "0.0.0.0",
-   "outputCardID": 8,
-   "outputID": 2050,
-   "outputIndex": 2,
-   "pointSpacing": "0.000",
-   "power": 0,
-   "resolution": {
-    "height": 128,
-    "width": 128
-   },
-   "rvCardInfo": {
-    "chipEffectFlag": 0,
-    "decodeIc": "",
-    "driverChip": "",
-    "firmware": "4.6.6.68",
-    "firmwareRemark": "",
-    "grayScale": 14,
-    "maxGamma": 9856,
-    "mcuFirmWare": "4.6.6.68",
-    "mcuFirmWareRemark": "",
-    "moduleResolution": {
-     "height": 64,
-     "width": 64
-    },
-    "refreshRate": 3850,
-    "scanNumber": 16
-   },
-   "rvCardName": "A5sPlus",
-   "shortName": "",
-   "size": {
-    "height": 0,
-    "width": 0
-   },
-   "supportType": 0,
-   "voltage": 57,
-   "vsFreMax": 0,
-   "weight": 0
-  },
-  {
-   "angle": 0,
-   "brightness": 0.5,
-   "bunchesIndex": 0,
-   "cabType": "",
-   "cabinetFileParam": {
-    "cabinetName": "",
-    "cardModel": "",
-    "issue": 0,
-    "manufactureName": "",
-    "status": "unknown",
-    "version": "0.0.0.0"
-   },
-   "canvasID": 2048,
-   "clientOrderNo": "",
-   "colorTemperature": 6500,
-   "customGamma": false,
-   "familyName": "",
-   "gain": {
-    "b": 43,
-    "g": 43,
-    "r": 43
-   },
-   "gamma": {
-    "b": 2.8,
-    "g": 2.8,
-    "r": 2.8
-   },
-   "id": 400000000000003,
-   "index": 0,
-   "indicatorLightState": true,
-   "manufacture": "",
-   "moduleCount": 4,
-   "moduleSize": {
-    "moduleCol": 255,
-    "moduleRow": 255,
-    "overwrite": false
-   },
-   "ncpFileName": "",
-   "ncpVersion": "0.0.0.0",
-   "outputCardID": 8,
-   "outputID": 2052,
-   "outputIndex": 4,
-   "pointSpacing": "0.000",
-   "power": 0,
-   "resolution": {
-    "height": 128,
-    "width": 128
-   },
-   "rvCardInfo": {
-    "chipEffectFlag": 0,
-    "decodeIc": "",
-    "driverChip": "",
-    "firmware": "4.6.6.68",
-    "firmwareRemark": "",
-    "grayScale": 14,
-    "maxGamma": 9856,
-    "mcuFirmWare": "4.6.6.68",
-    "mcuFirmWareRemark": "",
-    "moduleResolution": {
-     "height": 64,
-     "width": 64
-    },
-    "refreshRate": 3850,
-    "scanNumber": 16
-   },
-   "rvCardName": "A5sPlus",
-   "shortName": "",
-   "size": {
-    "height": 0,
-    "width": 0
-   },
-   "supportType": 0,
-   "voltage": 235,
-   "vsFreMax": 0,
-   "weight": 0
-  }
- ],
+ "/api/v1/device/cabinet": [],
  "/api/v1/device/hw": {
   "Dns": null,
   "IpGateway": "",
@@ -1608,38 +1376,38 @@
   "name": "Stage left",
   "outputStatus": [
    {
-    "linkStatus": true,
+    "linkStatus": false,
     "outputCardID": 8,
     "outputID": 2048,
-    "status": 0,
+    "status": 2,
     "type": 0
    },
    {
-    "linkStatus": true,
+    "linkStatus": false,
     "outputCardID": 8,
     "outputID": 2049,
-    "status": 0,
+    "status": 2,
     "type": 0
    },
    {
-    "linkStatus": true,
+    "linkStatus": false,
     "outputCardID": 8,
     "outputID": 2050,
-    "status": 0,
+    "status": 2,
     "type": 0
    },
    {
-    "linkStatus": true,
+    "linkStatus": false,
     "outputCardID": 8,
     "outputID": 2051,
-    "status": 0,
+    "status": 2,
     "type": 0
    },
    {
-    "linkStatus": true,
+    "linkStatus": false,
     "outputCardID": 8,
     "outputID": 2052,
-    "status": 0,
+    "status": 2,
     "type": 0
    },
    {
@@ -1846,26 +1614,7 @@
    }
   ],
   "runtime": 21000,
-  "rvCardsRuntime": [
-   {
-    "cabinetID": 400000000000003,
-    "runtime": 31764480,
-    "rvCardID": 400000000000003,
-    "totalRuntime": 5940000
-   },
-   {
-    "cabinetID": 400000000000002,
-    "runtime": 31764480,
-    "rvCardID": 400000000000002,
-    "totalRuntime": 6072000
-   },
-   {
-    "cabinetID": 400000000000001,
-    "runtime": 31764480,
-    "rvCardID": 400000000000001,
-    "totalRuntime": 10170000
-   }
-  ],
+  "rvCardsRuntime": [],
   "screenSourceStatus": [
    {
     "groupID": 25,
@@ -2360,7 +2109,7 @@
  "/api/v1/screen/cabinet/count": {
   "list": [
    {
-    "CabinetCount": 3,
+    "CabinetCount": 0,
     "CabinetCountInBlackList": 0,
     "ScreenID": "{00000000-0000-0000-0000-000000000002}"
    }
@@ -2392,5 +2141,5 @@
   "__empty_body__": true,
   "__http_status__": 200
  },
- "__about__": "The COEX HTTP API as OBSERVED on one NovaStar MX30 -- firmware v1.5.1: reported by the operator, read over SNMP, and served over HTTP as /api/v1/device/hw hwVersion \"V1.5.1\" -- on 2026-09-26: real response structure and key spellings, synthetic values. An earlier version of this note said no HTTP field carries the firmware; that is withdrawn -- the afternoon pass never requested /api/v1/device/hw. Most paths were read once, that afternoon, after a show, through HTTP GETs only. The unit drove 72 cabinets on three of its ten type-0 outputs (REASONED: the RJ45 ports; output type codes are unconfirmed). Three cabinets stand in for 72 -- the chain-position-0 cabinet of each populated output (2048, 2050, 2052) -- so the per-output errorBit[0].value (190/189/187) and the odd /device/cabinet.voltage at chain position 0 (34/57/235; 5 elsewhere) are represented, both of UNKNOWN meaning; screen/cabinet/count says 3 to match. Every id, UUID, serial, MAC, IP, operator-set name and remark is synthetic; the controller name is a made-up label because the unit's was a plain word too, from which no model can be read. {\"__http_status__\": 200, \"__empty_body__\": true} marks a path that answered HTTP 200 with Content-Length: 0, no Content-Type and no {code, data, message} envelope, so a JSON parse of the body fails. OBSERVED with curl -i on /api/v1/device, /api/v1/device/screen/displaymode and the made-up /api/v1/novasun-probe-no-such-path: on this firmware an unknown path answers exactly like an absent one, where the MX40 Pro answered 404 for absent documented endpoints. /api/v1/screen/cabinets, /properties and /displayeffect carry the same marker but were seen only through a client that returns {} for an empty body and for {\"code\": 0, \"data\": {}} alike: absent-or-empty, UNKNOWN which. Every one of the six responses seen raw with curl -i, empty or not, carried Vary: Origin, Access-Control-Allow-Origin: * and Access-Control-Allow-Credentials: true. /api/v1/device/input is trimmed to one of its six inputPortConfig entries. Four paths come from the same unit that evening, from a passive packet capture of NovaStar VMP opening against it (VMP's own GETs; novasun sent none of them): /api/v1/device/hw, /api/v1/device/hw/versions, /api/v1/device/hw/lock and /api/v1/screen/output/display/state. /api/v1/device/hw is the identity endpoint: name \"MX30\" and modelID 5138 in one object, so 5138 is the MX30 (OBSERVED; that the other 5138s here name the same thing is REASONED), with hwVersion, sn and mac. Its keys, types, nulls and list lengths are OBSERVED, but only the values listed in tests/conftest.py MX30_LIKE_HW_OBSERVED are readings: sn, mac, ip, customName, deviceUUID and uptime are synthetic, and every other value is a type-correct placeholder (false, 0, \"\", zeros) for a value that was not recorded -- a placeholder false is not a reading that the unit lacks a capability. /api/v1/device/hw also carries randomPassword, an 8-digit string the unit served to a bare, unauthenticated GET (OBSERVED; purpose UNKNOWN). Here it is \"00000000\", an obviously fake value, so a test can prove it was dropped: a consumer must drop randomPassword before it logs, stores, displays or serialises anything read from this endpoint. /api/v1/device/hw/versions: controllerSystem.sn differed from /device/hw's sn on the unit (OBSERVED; both synthetic here, and neither is the SNMP walk's serial); uBoot was not recorded (placeholder). /api/v1/device/hw/lock is {\"locked\": 0, \"ip\": \"\"} exactly as read before VMP took the lock with a PUT; it was never read while the lock was held, so its locked shape is UNKNOWN (REASONED: locked 1 and the holder's IP, as the websocket's deviceLockChange carries). Read with GET only, it shows whether a control application holds the unit. /api/v1/screen/output/display/state is exactly as read while the wall was live, and it IS the display state: displayState[].displayMode per canvasID read 0 while the wall was live and 2 for the whole of a front-panel freeze (OBSERVED in an attended read-only test later that evening, in which novasun polled this path at 1 Hz), so a frozen wall is readable over a plain GET. 1 = blackout is OBSERVED too, once: displayMode read 1 through an attended front-panel blackout later still that evening (it was REASONED from the documented COEX display-mode enum until then). mappingState's meaning is UNKNOWN. The afternoon pass polled /api/v1/device/screen/displaymode (the empty 200 above) and missed this path, which is why a frozen wall was once recorded as unobservable; that conclusion is withdrawn. The same state is pushed on the websocket (tests/fixtures/mx30_websocket_events.jsonl), and the unit's unsolicited UDP announcement is tests/fixtures/mx30_announcement.json. Nothing here says what another MX30 or another firmware does. Generated from tests/conftest.py (MX30_LIKE_API); tests/test_fixtures.py asserts they agree."
+ "__about__": "The COEX HTTP API of the MX30 in tests/fixtures/mx30_like_api.json (hwVersion V1.5.1) with EVERY OUTPUT DATA LINE UNPLUGGED AND THE UNIT LEFT POWERED, as OBSERVED in an attended read-only session on 2026-09-26 (lines pulled one at a time, 18:59:52Z-19:02:29Z; nothing written in that stretch): real structure, synthetic values, the same three stand-in cabinets for the unit's 72. THIS FILE IS A FALSE-ALL-CLEAR TRAP. /api/v1/device/monitor/info reads exactly like a healthy wall: it still lists every cabinet and receiving card (72 of 72 on the unit, the three stand-ins here), every rvCards[].nextCabinetLinkStatus.linkStatus is true, and the temperatures, voltages and errorBit read what they read connected -- with nothing connected. The unit returned that at every 2 s poll from the last unplug to power-off, about 8.5 minutes later, and it never cleared (OBSERVED); the per-card readings are last-known values, not live (REASONED). So a reader that counts cabinets online from monitor/info, or takes a reporting card to be a connected one, reports this wall as healthy: \"present in monitor/info with a reporting card = online\" was REASONED and is withdrawn. What did change, all OBSERVED: /api/v1/device/cabinet is an empty list (it holds the cabinets connected now, not the configured ones; 0 entries, read at about 19:03Z); /api/v1/screen/cabinet/count CabinetCount is 0 (72 connected; read at about 19:03Z); monitor/info outputStatus[].linkStatus is false on every output, each linked output having gone false within one 2 s poll of its line coming out and reading status 2 after (status 2's meaning is UNKNOWN); and monitor/info rvCardsRuntime is empty (72 entries connected). Those are the signals to build on: compare CabinetCount, or the /api/v1/device/cabinet entry count, with the number expected, and read outputStatus[].linkStatus. Display state does not show it either: /api/v1/screen/output/display/state read displayMode 0 at every 1 Hz poll through the unplugging (OBSERVED). Nor does the controller's presence: its UDP announcement went on every 3 s throughout (OBSERVED), so an announcing, answering controller is not a connected wall. The websocket did carry the news at once -- ScreensCabinetsCountChange 72 -> 48 -> 46 -> 45 -> 36 -> 24 -> 0, outputPortLinkChange and physicalOutputPortLinkChange per port, alarmCountChange with count rising 3 -> 4 -> 6 (OBSERVED; not in this file). Outputs 2049 and 2051, linked but carrying no cabinets, are backup ports (OBSERVED from the unit's own outputPortLinkChange). Carried over unchanged from mx30_like_api.json and NOT re-read with the lines out, so whether they changed is UNKNOWN: every other path, every other monitor/info field (controller readings, fans, runtimes, screenSourceStatus, cabinets[]'s order) and the status of every output whose link was already false. /api/v1/screen in particular: the websocket pushed screenCabinetSizeChange (a 128x128 cabinet size) at each stage, so its geometry may have moved (UNKNOWN). Only the end state, every line out, is here: the intermediate stages were watched through monitor/info and the websocket only. Whether the MX40 Pro's monitor/info does the same is UNKNOWN; it was never watched with a line out. The unit was then switched off at its front-panel button: HTTP answered connection refused, never a timeout, for the 7.5 minutes watched, and the announcements stopped (OBSERVED) -- a standby, not an unplugged wall (REASONED), and not represented here. Ids, UUIDs, the MAC, IPs and serials are mx30_like_api.json's synthetic ones, and randomPassword is its fake \"00000000\": a consumer must drop randomPassword before it logs, stores, displays or serialises anything read from /api/v1/device/hw. A diff of this file against mx30_like_api.json shows exactly what unplugging changed: this note, /api/v1/device/cabinet, /api/v1/screen/cabinet/count, and monitor/info's outputStatus and rvCardsRuntime. tests/fixtures/crewbox_harness.mts serves this file to crewbox's CoexReader and prints the grade it gives: at crewbox commit 7c8cf6a that was {\"health\": \"ok\", \"summary\": \"3 cabinets, 44\u00b0C\"}, every cabinet online (assumed), exactly its grade for the connected mx30_like_api.json (OBSERVED in the harness, 2026-09-26). Nothing here says what another MX30 or another firmware does. Generated from tests/conftest.py (MX30_UNPLUGGED_API); tests/test_fixtures.py asserts they agree."
 }

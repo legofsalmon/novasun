@@ -15,6 +15,7 @@ Ask :meth:`Processor.inputs` what is switchable before offering it in a UI.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -374,16 +375,37 @@ class Processor:
                 controller.set_brightness(percent, Target.all_on_port(port))
             return
         if self.coex is not None:
-            screens = self.coex.screens()
-            identifiers = [
-                screen["screenID"]
-                for screen in (screens.get("screens", []) if isinstance(screens, dict) else [])
-            ]
-            if identifiers:
-                self.coex.set_screen_brightness(identifiers, percent / 100)
-                return
+            # The screen-level PUT was answered Success and ignored by an MX30;
+            # the cabinet-level PUT with every connected cabinet's id worked and
+            # read back within 1 s (both OBSERVED 2026-09-26). Never fall
+            # through to the register bus on COEX hardware.
+            ratio = percent / 100
+            ids = self._connected_cabinet_ids()
+            if not ids:
+                raise NotSupported("no connected cabinets to address: the cabinet list is empty")
+            self.coex.set_cabinet_brightness(ids, ratio)
+            self._confirm_cabinet_brightness(ratio)
+            return
         controller = self._require_controller("brightness")
         controller.set_brightness(percent)
+
+    def _connected_cabinet_ids(self) -> list[Any]:
+        payload = self.coex.cabinets()
+        entries = payload.get("cabinets", []) if isinstance(payload, dict) else payload
+        return [e["id"] for e in entries or [] if isinstance(e, dict) and e.get("id") is not None]
+
+    def _confirm_cabinet_brightness(self, ratio: float, timeout: float = 1.5) -> None:
+        """Read the cabinets back: a Success envelope is not proof a write took."""
+        deadline = time.monotonic() + timeout
+        while True:
+            payload = self.coex.cabinets()
+            entries = payload.get("cabinets", []) if isinstance(payload, dict) else payload
+            values = [e.get("brightness") for e in entries or [] if isinstance(e, dict)]
+            if values and all(isinstance(v, (int, float)) and abs(v - ratio) <= 0.005 for v in values):
+                return
+            if time.monotonic() >= deadline:
+                raise ValueError(f"brightness write answered Success but reads back {sorted(set(map(str, values)))}")
+            time.sleep(0.25)
 
     def monitoring(self, port: int = 0, index: int = 0) -> ReceiverStatus | dict[str, Any]:
         if self.coex is not None:

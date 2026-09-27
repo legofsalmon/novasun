@@ -570,9 +570,20 @@ class TestRealCoexMonitoringDoesNotCrashRefresh:
     fixture here has the same structure and none of the values.
     """
 
+    class _Coex:
+        def __init__(self, cabinets):
+            self._cabinets = cabinets
+
+        def cabinets(self):
+            return self._cabinets
+
+        def cabinet_count(self):
+            return {"list": [{"ScreenID": "{s}", "CabinetCount": len(self._cabinets)}]}
+
     class _Stub:
-        def __init__(self, payload):
+        def __init__(self, payload, cabinets=None):
             self._payload = payload
+            self.coex = None if cabinets is None else TestRealCoexMonitoringDoesNotCrashRefresh._Coex(cabinets)
 
         def monitoring(self):
             return self._payload
@@ -581,10 +592,22 @@ class TestRealCoexMonitoringDoesNotCrashRefresh:
         from conftest import MX40_LIKE_MONITOR_INFO
 
         device = app.add("127.0.0.1", control_port=closed_port(), http_port=closed_port())
-        status = device._read_status(self._Stub(MX40_LIKE_MONITOR_INFO))
+        from conftest import MX40_LIKE_CABINETS
+
+        status = device._read_status(self._Stub(MX40_LIKE_MONITOR_INFO, MX40_LIKE_CABINETS))
         assert status["cabinets_total"] == 3
         assert status["cabinets_online"] == 3
         assert status["temperature_c"] == 41
+        assert status["healthy"] is True
+
+    def test_monitoring_alone_is_unknown_not_healthy(self, app) -> None:
+        from conftest import MX40_LIKE_MONITOR_INFO
+
+        device = app.add("127.0.0.1", control_port=closed_port(), http_port=closed_port())
+        status = device._read_status(self._Stub(MX40_LIKE_MONITOR_INFO))
+        assert status["cabinets_online"] is None and "temperature_c" not in status
+        assert status["healthy"] is False
+        assert status["health_reasons"] == ["no connected-cabinet source answered: state unknown"]
 
     def test_a_shape_nobody_has_seen_is_a_state_not_a_crash(self, app) -> None:
         device = app.add("127.0.0.1", control_port=closed_port(), http_port=closed_port())
